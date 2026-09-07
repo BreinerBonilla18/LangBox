@@ -1,8 +1,9 @@
 <script setup>
-import { ref, onMounted } from 'vue'
 import { getAllVaultWords, deleteWordFromVault } from '../core/api/wordStorage'
 import { Trash2, ChevronDown, ChevronUp, BookOpen } from '@lucide/vue'
+import { syncDeleteWordFromCloud } from '../core/api/syncService'
 import { useRouter } from 'vue-router'
+import { ref, onMounted } from 'vue'
 
 const router = useRouter()
 
@@ -30,6 +31,8 @@ const handleDelete = async (wordId) => {
   try {
     await deleteWordFromVault(wordId)
     words.value = words.value.filter(word => word.id !== wordId)
+
+    await syncDeleteWordFromCloud(wordId)
   } catch (error) {
     console.error('Error deleting word:', error)
   }

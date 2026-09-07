@@ -1,12 +1,15 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { supabase } from '../core/api/supabaseClient'
-import { pullWordsFromCloud } from '../core/api/syncService'
+import { pullWordsFromCloud, syncLocalWordsToCloudOnLogin } from '../core/api/syncService'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(null)
   const session = ref(null)
   const isLoading = ref(true)
+
+  // Bandera para evitar sincronizaciones repetidas durante la misma sesión de uso
+  const isWordsSynced = ref(false)
 
   // Inicializa la sesión y escucha cambios de estado (login, logout, refresh)
   const initAuth = async () => {
@@ -17,18 +20,27 @@ export const useAuthStore = defineStore('auth', () => {
     session.value = data.session
     user.value = data.session?.user || null
 
-    if (user.value) {
+    // Sincronizar solo la primera vez que carga si hay usuario
+    if (user.value && !isWordsSynced.value) {
+      isWordsSynced.value = true
       pullWordsFromCloud().catch(console.error)
     }
-
-    // Escuchar eventos de cambio de autenticación
-    supabase.auth.onAuthStateChange(async (_event, newSession) => {
+    // Escuchar cambios de autenticación
+    supabase.auth.onAuthStateChange(async (event, newSession) => {
+      const newUser = newSession?.user || null
       session.value = newSession
-      user.value = newSession?.user || null
+      user.value = newUser
+      if (!newUser) {
+        // Si el usuario cierra sesión, reseteamos la bandera
+        isWordsSynced.value = false
+        return
+      }
 
-      if (newSession?.user) {
-        // Al iniciar sesión, sincroniza las palabras guardadas en la nube a Dexie.js
-        await pullWordsFromCloud().catch(console.error)
+      // Si se dispara SIGNED_IN pero ya sincronizamos este usuario en esta sesión, lo ignoramos
+      if (event === 'SIGNED_IN' && !isWordsSynced.value) {
+        isWordsSynced.value = true
+        // Ejecuta la fusión de datos local -> nube -> local
+        await syncLocalWordsToCloudOnLogin(newUser.id).catch(console.error)
       }
     })
 
