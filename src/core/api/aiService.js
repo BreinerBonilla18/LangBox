@@ -9,7 +9,7 @@ export async function enrichWordWithGemini(word) {
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY
 
   if (!apiKey) {
-    throw new Error('Falta la API Key de Gemini en .env.local')
+    throw new Error('Falta la API Key de Gemini en .env')
   }
 
   const prompt = `

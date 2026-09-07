@@ -1,6 +1,7 @@
 <script setup>
 import { enrichWordWithGemini } from "../core/api/aiService"
 import { saveWordToVault } from '../core/api/wordStorage'
+import { syncWordToCloud } from '../core/api/syncService'
 import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -55,10 +56,9 @@ const handleSave = async () => {
     i: 1,              // intervalo (días)
     nrd: today         // fecha de próxima revisión
   }
-
   try {
-    debugger
     await saveWordToVault(wordPayload)
+    syncWordToCloud(wordPayload).catch(console.error)
     router.push('/vocabulary')
   } catch (err) {
     errorMessage.value = 'No se pudo guardar la palabra en la base de datos local.'
@@ -66,7 +66,7 @@ const handleSave = async () => {
 }
 
 const handleGoBack = () => {
-  emit('go-back')
+ router.push('/')
 }
 
 // Al montarse el componente, realiza la búsqueda
@@ -81,7 +81,7 @@ watch(() => props.word, (newWord) => {
 </script>
 
 <template>
-  <div class="flex flex-col items-center justify-center px-4 my-8 min-h-screen">
+  <div class="flex flex-col items-center justify-center px-4 py-8 min-h-screen">
     <div class="w-full max-w-2xl">
     
     <!-- Loading -->
