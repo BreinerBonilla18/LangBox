@@ -2,7 +2,7 @@
 import { Search, Book, Brain, LogOut } from '@lucide/vue'
 import langboxLogo from '../assets/langbox.svg'
 import { useRouter } from 'vue-router'
-import { ref, onMounted, watch } from 'vue'
+import { ref } from 'vue'
 import { useAuthStore } from '../stores/authStore'
 import googleIcon from '../assets/google.svg'
 
