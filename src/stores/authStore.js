@@ -1,8 +1,13 @@
+import { syncLocalWordsToCloudOnLogin } from '../core/api/syncService'
+import { supabase } from '../core/db/supabaseClient'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { supabase } from '../core/api/supabaseClient'
-import { pullWordsFromCloud, syncLocalWordsToCloudOnLogin } from '../core/api/syncService'
 
+/**
+ * @function useAuthStore
+ * @description Store para gestionar la autenticación de usuarios
+ * @returns {Object} - Store de autenticación
+ */
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(null)
   const session = ref(null)
@@ -14,7 +19,6 @@ export const useAuthStore = defineStore('auth', () => {
   // Inicializa la sesión y escucha cambios de estado (login, logout, refresh)
   const initAuth = async () => {
     isLoading.value = true
-
     // Obtener sesión actual
     const { data } = await supabase.auth.getSession()
     session.value = data.session
@@ -23,7 +27,7 @@ export const useAuthStore = defineStore('auth', () => {
     // Sincronizar solo la primera vez que carga si hay usuario
     if (user.value && !isWordsSynced.value) {
       isWordsSynced.value = true
-      pullWordsFromCloud().catch(console.error)
+      syncLocalWordsToCloudOnLogin(user.value.id).catch(console.error)
     }
     // Escuchar cambios de autenticación
     supabase.auth.onAuthStateChange(async (event, newSession) => {
@@ -58,26 +62,6 @@ export const useAuthStore = defineStore('auth', () => {
     if (error) throw error
   }
 
-  // Iniciar sesión con Email y Contraseña
-  const loginWithEmail = async (email, password) => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password
-    })
-    if (error) throw error
-    return data
-  }
-
-  // Registrar usuario con Email y Contraseña
-  const signUpWithEmail = async (email, password) => {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password
-    })
-    if (error) throw error
-    return data
-  }
-
   // Cerrar Sesión
   const logout = async () => {
     const { error } = await supabase.auth.signOut()
@@ -92,8 +76,6 @@ export const useAuthStore = defineStore('auth', () => {
     isLoading,
     initAuth,
     loginWithGoogle,
-    loginWithEmail,
-    signUpWithEmail,
     logout
   }
 })

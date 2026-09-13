@@ -7,19 +7,15 @@ import { ref, onMounted } from 'vue'
 
 const router = useRouter()
 
-const words = ref([])
-const isLoading = ref(true)
 const expandedWords = ref(new Set())
+const isLoading = ref(true)
+const words = ref([])
 
-const handleGoBack = () => {
-  router.push('/')
-}
+const handleGoToFlashcards = () => router.push('/flashcards')
+const handleGoBack = () => router.push('/')
 
-const handleGoToFlashcards = () => {
-  router.push('/flashcards')
-}
-
-const toggleExpand = (wordId) => {
+// Función para alternar la expansión de una palabra
+const handleToggleExpand = (wordId) => {
   if (expandedWords.value.has(wordId)) {
     expandedWords.value.delete(wordId)
   } else {
@@ -27,6 +23,7 @@ const toggleExpand = (wordId) => {
   }
 }
 
+// Función para eliminar una palabra
 const handleDelete = async (wordId) => {
   try {
     await deleteWordFromVault(wordId)
@@ -38,7 +35,8 @@ const handleDelete = async (wordId) => {
   }
 }
 
-const loadWords = async () => {
+// Función para cargar las palabras
+const handleLoadWords = async () => {
   try {
     words.value = await getAllVaultWords()
   } catch (error) {
@@ -49,7 +47,7 @@ const loadWords = async () => {
 }
 
 onMounted(() => {
-  loadWords()
+  handleLoadWords()
 })
 </script>
 
@@ -68,7 +66,7 @@ onMounted(() => {
 
           <button @click="handleGoToFlashcards"
             class="bg-indigo-500 hover:bg-indigo-600 text-white font-medium px-6 py-3 rounded-xl transition-colors shadow-lg shadow-indigo-500/20 text-sm flex items-center gap-2 cursor-pointer">
-           Iniciar repaso
+            Iniciar repaso
           </button>
         </div>
       </div>
@@ -90,11 +88,11 @@ onMounted(() => {
       </div>
 
       <!-- Lista de Palabras -->
-      <div v-else class="space-y-4">
+      <div v-else class="space-y-4 mb-8">
         <div v-for="word in words" :key="word.id"
           class="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden transition-all hover:border-indigo-500/30">
           <!-- Card -->
-          <div class=" p-4 flex items-center justify-between cursor-pointer" @click="toggleExpand(word.id)">
+          <div class=" p-4 flex items-center justify-between cursor-pointer" @click="handleToggleExpand(word.id)">
             <div class="flex items-center gap-4">
               <div class="flex items-center gap-3">
                 <h2 class="text-xl font-semibold text-slate-50 capitalize">{{ word.word }}</h2>

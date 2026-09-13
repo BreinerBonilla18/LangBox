@@ -1,16 +1,17 @@
 <script setup>
 import { Search, Book, Brain, LogOut } from '@lucide/vue'
-import langboxLogo from '../assets/langbox.svg'
-import { useRouter } from 'vue-router'
-import { ref, onMounted, watch } from 'vue'
 import { useAuthStore } from '../stores/authStore'
+import langboxLogo from '../assets/langbox.svg'
 import googleIcon from '../assets/google.svg'
+import { useRouter } from 'vue-router'
+import { ref } from 'vue'
 
-const router = useRouter()
 const authStore = useAuthStore()
+const router = useRouter()
 
 const searchQuery = ref('')
 
+// Llevar al usuario a la página de búsqueda cuando se realiza una búsqueda
 const handleSearch = () => {
   const query = searchQuery.value.trim()
   if (!query) return
@@ -21,7 +22,7 @@ const handleSearch = () => {
 const goToVocabulary = () => router.push('/vocabulary')
 const goToFlashcards = () => router.push('/flashcards')
 
-
+// Manejar inicio de sesión con Google
 const handleGoogleLogin = async () => {
   try {
     await authStore.loginWithGoogle()
@@ -30,6 +31,7 @@ const handleGoogleLogin = async () => {
   }
 }
 
+// Manejar cierre de sesión
 const handleLogout = async () => {
   try {
     await authStore.logout()
@@ -57,7 +59,7 @@ const cards = [
 <template>
   <div class="relative flex flex-col items-center justify-center px-4 min-h-screen">
 
-    <!-- Widget de Autenticación en la esquina superior derecha -->
+    <!-- Card de Autenticación en la esquina superior derecha -->
     <header class="absolute top-4 right-4 z-10">
 
       <!-- Loader mientras verifica sesión -->
@@ -81,7 +83,7 @@ const cards = [
           </div>
 
           <div class="flex flex-col text-left pr-1">
-            <span class="text-xs font-medium text-slate-200 leading-tight max-w-[120px] sm:max-w-[160px] truncate">
+            <span class="text-xs font-medium text-slate-200 leading-tight max-w-30 sm:max-w-40 truncate">
               {{ authStore.user.user_metadata?.full_name || authStore.user.email }}
             </span>
 
@@ -106,13 +108,13 @@ const cards = [
 
     </header>
 
-    <!-- Logo & Title -->
+    <!-- Logo y Título -->
     <div class="text-6xl flex flex-row items-center gap-3 mb-8">
       <div class="w-16 h-16"><img :src="langboxLogo" alt="LangBox Logo" /></div>
       <h1 class="text-slate-50 tracking-widest"><span class="text-indigo-500">Lang</span>Box</h1>
     </div>
 
-    <!-- Search Input -->
+    <!-- Barra de búsqueda -->
     <div class="w-full max-w-2xl mb-8">
       <div class="relative flex gap-2">
         <Search class="absolute left-4 top-1/2 transform -translate-y-1/2 text-zinc-400 w-5 h-5" />

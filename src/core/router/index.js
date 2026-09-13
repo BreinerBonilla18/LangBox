@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Layout from '../../layouts/Layout.vue'
 
+// Rutas de la aplicación
 const routes = [
   {
     path: '/',
@@ -36,6 +37,7 @@ const routes = [
   }
 ]
 
+// Crear el router
 const router = createRouter({
   history: createWebHistory(),
   routes

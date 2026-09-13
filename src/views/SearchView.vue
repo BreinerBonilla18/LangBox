@@ -7,6 +7,7 @@ import { useRouter } from 'vue-router'
 
 const router = useRouter()
 
+// Definir props
 const props = defineProps({
   word: {
     type: String,
@@ -14,13 +15,12 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['save-word', 'go-back'])
-
-const isLoading = ref(true)
 const errorMessage = ref('')
+const isLoading = ref(true)
 
 const wordData = ref(null)
 
+// Función para buscar datos de la palabra
 const fetchWordData = async (wordToSearch) => {
   if (!wordToSearch) return
 
@@ -39,6 +39,7 @@ const fetchWordData = async (wordToSearch) => {
   }
 }
 
+// Función para guardar la palabra
 const handleSave = async () => {
   if (!wordData.value) return
 
@@ -65,9 +66,7 @@ const handleSave = async () => {
   }
 }
 
-const handleGoBack = () => {
- router.push('/')
-}
+const handleGoBack = () => router.push('/')
 
 // Al montarse el componente, realiza la búsqueda
 onMounted(() => {
@@ -84,7 +83,7 @@ watch(() => props.word, (newWord) => {
   <div class="flex flex-col items-center justify-center px-4 py-8 min-h-screen">
     <div class="w-full max-w-2xl">
     
-    <!-- Loading -->
+    <!-- Card de carga -->
     <div v-if="isLoading" class="text-center py-16 space-y-4">
       <div class="inline-block w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
       <p class="text-zinc-400 tracking-wide">Consultando significados de "{{ props.word }}" con IA...</p>
@@ -104,6 +103,7 @@ watch(() => props.word, (newWord) => {
     <!-- Contenido Principal -->
     <div v-else-if="wordData" class="space-y-6">
       
+      <!-- Palabra Consultada -->
       <header class="border-b border-zinc-800 pb-4 flex items-baseline justify-between gap-4">
         <div>
           <span class="text-xs font-semibold text-indigo-400 uppercase tracking-widest block mb-1">Palabra Consultada</span>
@@ -116,6 +116,7 @@ watch(() => props.word, (newWord) => {
         </span>
       </header>
 
+      <!-- Significados y Ejemplos -->
       <section class="space-y-4">
         <h2 class="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Significados y Ejemplos</h2>
         
@@ -139,6 +140,7 @@ watch(() => props.word, (newWord) => {
         </div>
       </section>
 
+      <!-- Mnemotecnia -->
       <section v-if="wordData.mnemonics?.length" class="bg-zinc-900/80 border-l-4 border-emerald-400 border-y border-r border-zinc-800 rounded-r-xl p-5 space-y-2">
         <h3 class="text-xs font-semibold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
           <span>💡</span> Mnemotecnia
@@ -164,17 +166,18 @@ watch(() => props.word, (newWord) => {
         </div>
       </section>
 
+      <!-- Botones -->
       <footer class="pt-6 border-t border-zinc-800 flex items-center justify-between gap-4">
         <button
           @click="handleGoBack"
-          class="bg-zinc-800 hover:bg-zinc-700 text-slate-300 font-medium px-5 py-3 rounded-xl transition-colors text-sm cursor-pointer"
+          class="bg-zinc-800 hover:bg-zinc-700 text-slate-300 font-medium px-6 py-3 rounded-xl transition-colors text-sm cursor-pointer"
         >
           Volver
         </button>
 
         <button
           @click="handleSave"
-          class="bg-indigo-500 hover:bg-indigo-600 text-white font-medium px-6 py-3 rounded-xl transition-colors shadow-lg shadow-indigo-500/20 text-sm flex items-center gap-2 cursor-pointer"
+          class="bg-indigo-500 hover:bg-indigo-600 text-white font-medium px-6 py-3 rounded-xl transition-colors shadow-lg shadow-indigo-500/20 text-sm cursor-pointer"
         >
           Guardar
         </button>

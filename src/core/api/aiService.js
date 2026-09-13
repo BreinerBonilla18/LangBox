@@ -1,17 +1,24 @@
-// Lista de modelos ordenados por preferencia para fallback automático
+
 const GEMINI_MODELS = [
   'gemini-3.5-flash-lite',
   'gemini-3.5-flash',
   'gemini-3.6-flash'
 ]
 
+/**
+ * @function enrichWordWithGemini
+ * @description Enriquece una palabra con datos generados por IA usando Gemini API
+ * @param {string} word - La palabra a enriquecer
+ * @returns {Promise<Object>} - Los datos de la palabra enriquecida
+ */
 export async function enrichWordWithGemini(word) {
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY 
 
   if (!apiKey) {
     throw new Error('Falta la API Key de Gemini en .env')
   }
 
+  // Prompt para la API de Gemini
   const prompt = `
     You are an expert lexicographer and AI assistant for BoxLang, a language learning app.
     Analyze the English word: "${word}".
@@ -45,11 +52,13 @@ export async function enrichWordWithGemini(word) {
 
   let lastError = null
 
-  // Intentamos con cada modelo de la lista en orden hasta que uno responda exitosamente
+  // Recorrido de cada modelo de la lista en orden hasta que uno responda exitosamente
   for (const model of GEMINI_MODELS) {
     try {
+      // URL de la API de Gemini
       const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`
 
+      // Petición a la API de Gemini
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -62,6 +71,7 @@ export async function enrichWordWithGemini(word) {
         })
       })
 
+      // Verificar si la respuesta es exitosa
       if (response.ok) {
         const data = await response.json()
         const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text
@@ -74,6 +84,7 @@ export async function enrichWordWithGemini(word) {
       lastError = new Error(`Error ${response.status}: ${errorJson.error?.message || 'Servidor no disponible'}`)
 
     } catch (err) {
+      // Si hay un error de red, registramos el aviso e intentamos el siguiente modelo
       console.warn(`[Gemini API] Error de red probando con ${model}:`, err)
       lastError = err
     }
