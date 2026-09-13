@@ -61,7 +61,7 @@ const handleSave = async () => {
     await saveWordToVault(wordPayload)
     syncWordToCloud(wordPayload).catch(console.error)
     router.push('/vocabulary')
-  } catch (err) {
+  } catch {
     errorMessage.value = 'No se pudo guardar la palabra en la base de datos local.'
   }
 }
