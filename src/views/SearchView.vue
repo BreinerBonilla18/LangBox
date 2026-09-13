@@ -104,14 +104,14 @@ watch(() => props.word, (newWord) => {
     <div v-else-if="wordData" class="space-y-6">
       
       <!-- Palabra Consultada -->
-      <header class="border-b border-zinc-800 pb-4 flex items-baseline justify-between gap-4">
+      <header class="border-b border-zinc-800 pb-4 flex flex-col sm:flex-row items-start sm:items-baseline justify-between gap-3 sm:gap-4">
         <div>
-          <span class="text-xs font-semibold text-indigo-400 uppercase tracking-widest block mb-1">Palabra Consultada</span>
-          <h1 class="text-4xl font-bold text-slate-50 tracking-study capitalize">
+          <span class="text-[10px] sm:text-xs font-semibold text-indigo-400 uppercase tracking-widest block mb-1">Palabra Consultada</span>
+          <h1 class="text-3xl sm:text-4xl font-bold text-slate-50 tracking-study capitalize">
             {{ wordData.word }}
           </h1>
         </div>
-        <span v-if="wordData.phonetic" class="text-lg text-indigo-400/90 tracking-wider bg-zinc-900 border border-zinc-800 px-3 py-1 rounded-lg">
+        <span v-if="wordData.phonetic" class="text-sm sm:text-lg text-indigo-400/90 tracking-wider bg-zinc-900 border border-zinc-800 px-3 py-1 rounded-lg">
           {{ wordData.phonetic }}
         </span>
       </header>
@@ -123,25 +123,25 @@ watch(() => props.word, (newWord) => {
         <div 
           v-for="(meaning, index) in wordData.meanings" 
           :key="index" 
-          class="bg-zinc-900/80 border border-zinc-800 rounded-xl p-5 space-y-3"
+          class="bg-zinc-900/80 border border-zinc-800 rounded-xl p-4 sm:p-5 space-y-3"
         >
-          <span class="inline-block bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs px-2.5 py-0.5 rounded-md capitalize">
+          <span class="inline-block bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[10px] sm:text-xs px-2.5 py-0.5 rounded-md capitalize">
             {{ meaning.part_of_speech }}
           </span>
 
-          <p class="text-slate-200 text-base leading-relaxed">
+          <p class="text-slate-200 text-sm sm:text-base leading-relaxed">
             <strong class="text-slate-100 font-semibold">Definición:</strong> {{ meaning.definition_es }}
           </p>
           
-          <div class="bg-zinc-950/60 p-4 rounded-lg border border-zinc-800/80 space-y-1">
-            <p class="text-slate-100 font-medium leading-relaxed">"{{ meaning.example_en }}"</p>
-            <p class="text-zinc-400 text-sm italic">{{ meaning.example_es }}</p>
+          <div class="bg-zinc-950/60 p-3 sm:p-4 rounded-lg border border-zinc-800/80 space-y-1">
+            <p class="text-slate-100 font-medium leading-relaxed text-sm sm:text-base">"{{ meaning.example_en }}"</p>
+            <p class="text-zinc-400 text-xs sm:text-sm italic">{{ meaning.example_es }}</p>
           </div>
         </div>
       </section>
 
       <!-- Mnemotecnia -->
-      <section v-if="wordData.mnemonics?.length" class="bg-zinc-900/80 border-l-4 border-emerald-400 border-y border-r border-zinc-800 rounded-r-xl p-5 space-y-2">
+      <section v-if="wordData.mnemonics?.length" class="bg-zinc-900/80 border-l-4 border-emerald-400 border-y border-r border-zinc-800 rounded-r-xl p-4 sm:p-5 space-y-2">
         <h3 class="text-xs font-semibold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
           <span>💡</span> Mnemotecnia
         </h3>
@@ -167,17 +167,17 @@ watch(() => props.word, (newWord) => {
       </section>
 
       <!-- Botones -->
-      <footer class="pt-6 border-t border-zinc-800 flex items-center justify-between gap-4">
+      <footer class="pt-6 border-t border-zinc-800 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4">
         <button
           @click="handleGoBack"
-          class="bg-zinc-800 hover:bg-zinc-700 text-slate-300 font-medium px-6 py-3 rounded-xl transition-colors text-sm cursor-pointer"
+          class="w-full sm:w-auto bg-zinc-800 hover:bg-zinc-700 text-slate-300 font-medium px-6 py-3 rounded-xl transition-colors text-sm cursor-pointer"
         >
           Volver
         </button>
 
         <button
           @click="handleSave"
-          class="bg-indigo-500 hover:bg-indigo-600 text-white font-medium px-6 py-3 rounded-xl transition-colors shadow-lg shadow-indigo-500/20 text-sm cursor-pointer"
+          class="w-full sm:w-auto bg-indigo-500 hover:bg-indigo-600 text-white font-medium px-6 py-3 rounded-xl transition-colors shadow-lg shadow-indigo-500/20 text-sm cursor-pointer"
         >
           Guardar
         </button>
