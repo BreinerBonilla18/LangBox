@@ -55,12 +55,52 @@
      - Go to Project Settings > API to get your URL and anon key
      - Enable Google OAuth in Authentication > Providers > Google
 
-4. **Run the development server**
+4. **Set up Supabase Database**
+   Run the following SQL in your Supabase project's SQL Editor (SQL Editor > New Query) to create the necessary tables and security policies:
+   
+   ```sql
+   create table public.words (
+     id text not null,
+     user_id uuid references auth.users(id) on delete cascade not null,
+     word text not null,
+     phonetic text,
+     meanings jsonb default '[]'::jsonb,
+     mnemonics jsonb default '[]'::jsonb,
+     synonyms jsonb default '[]'::jsonb,
+     r integer default 0,
+     ef numeric default 2.5,
+     i integer default 1,
+     nrd date not null,
+     created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+
+     primary key (id, user_id)
+   );
+
+   alter table public.words enable row level security;
+
+   create policy "Usuarios pueden ver sus propias palabras"
+     on public.words for select
+     using (auth.uid() = user_id);
+
+   create policy "Usuarios pueden insertar sus propias palabras"
+     on public.words for insert
+     with check (auth.uid() = user_id);
+
+   create policy "Usuarios pueden actualizar sus propias palabras"
+     on public.words for update
+     using (auth.uid() = user_id);
+
+   create policy "Usuarios pueden eliminar sus propias palabras"
+     on public.words for delete
+     using (auth.uid() = user_id);
+   ```
+
+5. **Run the development server**
    ```bash
    npm run dev
    ```
 
-5. **Open your browser**
+6. **Open your browser**
    Navigate to `http://localhost:5173`
 
 ## 📖 Usage
