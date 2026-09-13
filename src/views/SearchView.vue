@@ -111,7 +111,7 @@ watch(() => props.word, (newWord) => {
             {{ wordData.word }}
           </h1>
         </div>
-        <span v-if="wordData.phonetic" class="font-mono text-lg text-indigo-400/90 tracking-wider bg-zinc-900 border border-zinc-800 px-3 py-1 rounded-lg">
+        <span v-if="wordData.phonetic" class="text-lg text-indigo-400/90 tracking-wider bg-zinc-900 border border-zinc-800 px-3 py-1 rounded-lg">
           {{ wordData.phonetic }}
         </span>
       </header>
@@ -125,7 +125,7 @@ watch(() => props.word, (newWord) => {
           :key="index" 
           class="bg-zinc-900/80 border border-zinc-800 rounded-xl p-5 space-y-3"
         >
-          <span class="inline-block bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs px-2.5 py-0.5 rounded-md font-mono capitalize">
+          <span class="inline-block bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs px-2.5 py-0.5 rounded-md capitalize">
             {{ meaning.part_of_speech }}
           </span>
 
@@ -159,7 +159,7 @@ watch(() => props.word, (newWord) => {
           <span 
             v-for="syn in wordData.synonyms" 
             :key="syn"
-            class="bg-zinc-800/80 border border-zinc-700/60 text-slate-300 text-xs px-3 py-1.5 rounded-lg font-mono tracking-wide"
+            class="bg-zinc-800/80 border border-zinc-700/60 text-slate-300 text-xs px-3 py-1.5 rounded-lg tracking-wide"
           >
             {{ syn }}
           </span>

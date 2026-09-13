@@ -9,11 +9,5 @@
 }
 
 @theme {
-  --color-primary: #615fff;
-  --text-primary: #f8fafc;
-  --text-secondary: #9f9fa9;
-  --bg-primary: #09090b;
-  --bg-surface: #18181b;
   --font-sans: 'Fira Code', monospace;
-  --font-mono: 'Fira Code', monospace;
 }

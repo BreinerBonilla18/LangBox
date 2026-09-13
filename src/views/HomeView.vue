@@ -87,7 +87,7 @@ const cards = [
               {{ authStore.user.user_metadata?.full_name || authStore.user.email }}
             </span>
 
-            <span class="text-[10px] text-emerald-400 font-mono flex items-center gap-1">
+            <span class="text-[10px] text-emerald-400 flex items-center gap-1">
               <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Sincronizado
             </span>
           </div>

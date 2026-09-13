@@ -97,7 +97,7 @@ onMounted(() => {
               <div class="flex items-center gap-3">
                 <h2 class="text-xl font-semibold text-slate-50 capitalize">{{ word.word }}</h2>
                 <span v-if="word.phonetic"
-                  class="font-mono text-sm text-indigo-400/90 tracking-wider bg-zinc-950 border border-zinc-800 px-2 py-0.5 rounded-md">
+                  class="text-sm text-indigo-400/90 tracking-wider bg-zinc-950 border border-zinc-800 px-2 py-0.5 rounded-md">
                   {{ word.phonetic }}
                 </span>
               </div>
@@ -124,7 +124,7 @@ onMounted(() => {
               <div v-for="(meaning, index) in word.meanings" :key="index"
                 class="bg-zinc-950/60 border border-zinc-800/80 rounded-lg p-4 space-y-2">
                 <span
-                  class="inline-block bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs px-2 py-0.5 rounded-md font-mono capitalize">
+                  class="inline-block bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs px-2 py-0.5 rounded-md capitalize">
                   {{ meaning.part_of_speech }}
                 </span>
                 <p class="text-slate-200 text-sm leading-relaxed">
@@ -155,7 +155,7 @@ onMounted(() => {
               <span class="text-xs font-semibold text-zinc-400 uppercase tracking-wider block">Sinonimos</span>
               <div class="flex flex-wrap gap-2">
                 <span v-for="syn in word.synonyms" :key="syn"
-                  class="bg-zinc-800/80 border border-zinc-700/60 text-slate-300 text-xs px-3 py-1.5 rounded-lg font-mono tracking-wide">
+                  class="bg-zinc-800/80 border border-zinc-700/60 text-slate-300 text-xs px-3 py-1.5 rounded-lg tracking-wide">
                   {{ syn }}
                 </span>
               </div>
