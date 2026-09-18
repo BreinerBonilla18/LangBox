@@ -16,7 +16,9 @@ const handleSearch = () => {
   const query = searchQuery.value.trim()
   if (!query) return
 
-  router.push({ name: 'search', params: { word: query } })
+  const capitalizedQuery = query.charAt(0).toUpperCase() + query.slice(1).toLowerCase()
+
+  router.push({ name: 'search', params: { word: capitalizedQuery } })
 }
 
 const goToVocabulary = () => router.push('/vocabulary')

@@ -1,9 +1,9 @@
 <script setup>
+import { Trash2, ChevronDown, ChevronUp, BookOpen, Search, ChevronLeft, ChevronRight, Volume2 } from '@lucide/vue'
 import { getAllVaultWords, deleteWordFromVault } from '../core/api/wordStorage'
-import { Trash2, ChevronDown, ChevronUp, BookOpen } from '@lucide/vue'
 import { syncDeleteWordFromCloud } from '../core/api/syncService'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ref, onMounted } from 'vue'
 
 const router = useRouter()
 
@@ -11,8 +11,49 @@ const expandedWords = ref(new Set())
 const isLoading = ref(true)
 const words = ref([])
 
+const searchQuery = ref('')
+const currentPage = ref(1)
+const itemsPerPage = 12
+
+const filteredWords = computed(() => {
+  if (!searchQuery.value) return words.value
+  const query = searchQuery.value.toLowerCase().trim()
+  return words.value.filter(word => 
+    word.word.toLowerCase().includes(query)
+  )
+})
+
+const totalPages = computed(() => Math.max(1, Math.ceil(filteredWords.value.length / itemsPerPage)))
+
+const paginatedWords = computed(() => {
+  const start = (currentPage.value - 1) * itemsPerPage
+  const end = start + itemsPerPage
+  return filteredWords.value.slice(start, end)
+})
+
+watch(searchQuery, () => {
+  currentPage.value = 1
+})
+
+const handlePrevPage = () => {
+  if (currentPage.value > 1) currentPage.value--
+}
+
+const handleNextPage = () => {
+  if (currentPage.value < totalPages.value) currentPage.value++
+}
+
 const handleGoToFlashcards = () => router.push('/flashcards')
 const handleGoBack = () => router.push('/')
+
+// Función para pronunciar la palabra
+const handleSpeak = (text) => {
+  if ('speechSynthesis' in window) {
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.lang = 'en-US'
+    window.speechSynthesis.speak(utterance)
+  }
+}
 
 // Función para alternar la expansión de una palabra
 const handleToggleExpand = (wordId) => {
@@ -69,6 +110,34 @@ onMounted(() => {
             Iniciar repaso
           </button>
         </div>
+
+        <!-- Barra de Búsqueda -->
+        <div class="mt-6 relative w-full" v-if="!isLoading && words.length > 0">
+          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <Search class="h-5 w-5 text-zinc-500" />
+          </div>
+          <input
+            v-model="searchQuery"
+            type="text"
+            placeholder="Buscar en tu vocabulario..."
+            class="w-full pl-10 pr-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-slate-50 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all sm:text-sm shadow-sm"
+          />
+        </div>
+
+        <!-- Paginación arriba -->
+        <div class="mt-6 flex items-center justify-between" v-if="filteredWords.length > 0 && totalPages > 1">
+          <button @click="handlePrevPage" :disabled="currentPage === 1"
+            class="p-2 sm:px-4 sm:py-2 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-colors text-slate-300 flex items-center gap-2 text-sm sm:text-base cursor-pointer">
+            <ChevronLeft class="w-5 h-5" />
+            <span class="hidden sm:inline">Anterior</span>
+          </button>
+          <span class="text-zinc-400 text-sm sm:text-base font-medium">Página {{ currentPage }} de {{ totalPages }}</span>
+          <button @click="handleNextPage" :disabled="currentPage === totalPages"
+            class="p-2 sm:px-4 sm:py-2 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-colors text-slate-300 flex items-center gap-2 text-sm sm:text-base cursor-pointer">
+            <span class="hidden sm:inline">Siguiente</span>
+            <ChevronRight class="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
       <!-- Estado de Carga -->
@@ -89,13 +158,22 @@ onMounted(() => {
 
       <!-- Lista de Palabras -->
       <div v-else class="space-y-4 mb-8">
-        <div v-for="word in words" :key="word.id"
+        <div v-if="filteredWords.length === 0 && searchQuery" class="text-center py-12 bg-zinc-900/50 border border-zinc-800/50 rounded-2xl">
+          <p class="text-zinc-400 text-lg">No se encontraron palabras que coincidan con "<span class="text-slate-200">{{ searchQuery }}</span>".</p>
+        </div>
+
+        <div v-for="word in paginatedWords" :key="word.id"
           class="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden transition-all hover:border-indigo-500/30">
           <!-- Card -->
           <div class=" p-3 sm:p-4 flex items-center justify-between cursor-pointer" @click="handleToggleExpand(word.id)">
             <div class="flex items-center gap-3 sm:gap-4 truncate">
-              <div class="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 truncate">
-                <h2 class="text-lg sm:text-xl font-semibold text-slate-50 capitalize truncate">{{ word.word }}</h2>
+              <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 truncate">
+                <div class="flex items-center gap-2">
+                  <h2 class="text-lg sm:text-xl font-semibold text-slate-50 capitalize truncate">{{ word.word }}</h2>
+                  <button @click.stop="handleSpeak(word.word)" class="p-1.5 text-zinc-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-colors cursor-pointer" title="Pronunciar">
+                    <Volume2 class="w-4 h-4 sm:w-5 sm:h-5" />
+                  </button>
+                </div>
                 <span v-if="word.phonetic"
                   class="text-xs sm:text-sm text-indigo-400/90 tracking-wider bg-zinc-950 border border-zinc-800 px-2 py-0.5 rounded-md self-start sm:self-auto">
                   {{ word.phonetic }}
@@ -131,7 +209,12 @@ onMounted(() => {
                   <strong class="text-slate-100 font-semibold">Definition:</strong> {{ meaning.definition_es }}
                 </p>
                 <div class="bg-zinc-900/50 p-2.5 sm:p-3 rounded-md border border-zinc-800/60 space-y-1">
-                  <p class="text-slate-100 text-xs sm:text-sm leading-relaxed">"{{ meaning.example_en }}"</p>
+                  <div class="flex items-start justify-between gap-3">
+                    <p class="text-slate-100 text-xs sm:text-sm leading-relaxed">"{{ meaning.example_en }}"</p>
+                    <button @click.stop="handleSpeak(meaning.example_en)" class="shrink-0 p-1.5 text-zinc-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-colors cursor-pointer" title="Pronunciar ejemplo">
+                      <Volume2 class="w-4 h-4" />
+                    </button>
+                  </div>
                   <p class="text-zinc-400 text-[10px] sm:text-xs italic">{{ meaning.example_es }}</p>
                 </div>
               </div>

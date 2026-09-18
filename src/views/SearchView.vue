@@ -4,6 +4,7 @@ import { saveWordToVault } from '../core/api/wordStorage'
 import { syncWordToCloud } from '../core/api/syncService'
 import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { Volume2 } from '@lucide/vue'
 
 const router = useRouter()
 
@@ -36,6 +37,15 @@ const fetchWordData = async (wordToSearch) => {
     errorMessage.value = 'No se pudo obtener la información de la palabra. Intenta de nuevo.'
   } finally {
     isLoading.value = false
+  }
+}
+
+// Función para pronunciar la palabra
+const handleSpeak = (text) => {
+  if ('speechSynthesis' in window) {
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.lang = 'en-US'
+    window.speechSynthesis.speak(utterance)
   }
 }
 
@@ -107,9 +117,14 @@ watch(() => props.word, (newWord) => {
       <header class="border-b border-zinc-800 pb-4 flex flex-col sm:flex-row items-start sm:items-baseline justify-between gap-3 sm:gap-4">
         <div>
           <span class="text-[10px] sm:text-xs font-semibold text-indigo-400 uppercase tracking-widest block mb-1">Palabra Consultada</span>
-          <h1 class="text-3xl sm:text-4xl font-bold text-slate-50 tracking-study capitalize">
-            {{ wordData.word }}
-          </h1>
+          <div class="flex items-center gap-3">
+            <h1 class="text-3xl sm:text-4xl font-bold text-slate-50 tracking-study capitalize">
+              {{ wordData.word }}
+            </h1>
+            <button @click.stop="handleSpeak(wordData.word)" class="p-2 text-zinc-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-colors cursor-pointer" title="Pronunciar">
+              <Volume2 class="w-6 h-6" />
+            </button>
+          </div>
         </div>
         <span v-if="wordData.phonetic" class="text-sm sm:text-lg text-indigo-400/90 tracking-wider bg-zinc-900 border border-zinc-800 px-3 py-1 rounded-lg">
           {{ wordData.phonetic }}
@@ -134,7 +149,12 @@ watch(() => props.word, (newWord) => {
           </p>
           
           <div class="bg-zinc-950/60 p-3 sm:p-4 rounded-lg border border-zinc-800/80 space-y-1">
-            <p class="text-slate-100 font-medium leading-relaxed text-sm sm:text-base">"{{ meaning.example_en }}"</p>
+            <div class="flex items-start justify-between gap-3">
+              <p class="text-slate-100 font-medium leading-relaxed text-sm sm:text-base">"{{ meaning.example_en }}"</p>
+              <button @click.stop="handleSpeak(meaning.example_en)" class="shrink-0 p-1.5 text-zinc-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-colors cursor-pointer" title="Pronunciar ejemplo">
+                <Volume2 class="w-4 h-4" />
+              </button>
+            </div>
             <p class="text-zinc-400 text-xs sm:text-sm italic">{{ meaning.example_es }}</p>
           </div>
         </div>
