@@ -33,7 +33,7 @@ export async function getWordsForReviewToday() {
   // Busca las palabras cuya Próxima Fecha de Revisión (nrd) sea menor o igual a hoy
   const words = await db.words
     .where('nrd')
-    .le(today)
+    .belowOrEqual(today)
     .toArray()
 
   return words.filter(w => !w.is_deleted)
