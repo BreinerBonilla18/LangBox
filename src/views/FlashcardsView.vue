@@ -1,9 +1,9 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { Volume2, BookOpen, Sparkles, Brain, CheckCircle2, RotateCcw, Frown, Smile } from '@lucide/vue'
-import { getWordsForReviewToday, saveWordToVault } from '../core/api/wordStorage'
-import { syncWordToCloud } from '../core/api/syncService'
+import { Volume2, BookOpen, Sparkles, Brain, CheckCircle2, RotateCcw, Frown, Smile, X, AlertTriangle, ChevronLeft } from '@lucide/vue'
+import { getWordsForReviewToday, saveWordToVault, getAllVaultWords, deleteWordFromVault } from '../core/api/wordStorage'
+import { syncWordToCloud, syncDeleteWordFromCloud } from '../core/api/syncService'
 
 const router = useRouter()
 const isLoading = ref(true)
@@ -11,10 +11,13 @@ const reviewQueue = ref([])
 const currentIndex = ref(0)
 const showAnswer = ref(false)
 const isSessionComplete = ref(false)
+const hasNoWords = ref(false)
+const showMasteryModal = ref(false)
+const wordToDecide = ref(null)
 
 // Función para volver al vocabulario
 const handleGoBack = () => {
-  router.push('/vocabulary')
+  router.push('/')
 }
 
 const currentWord = computed(() => {
@@ -34,6 +37,16 @@ const handleSpeak = (text) => {
 // Función para revelar la respuesta
 const revealAnswer = () => {
   showAnswer.value = true
+}
+
+// Función para ir al siguiente manual o automático
+const advanceToNext = () => {
+  showAnswer.value = false
+  currentIndex.value++
+
+  if (currentIndex.value >= reviewQueue.value.length) {
+    isSessionComplete.value = true
+  }
 }
 
 // Función para calificar y aplicar SM-2 Spaced Repetition Algorithm
@@ -75,18 +88,46 @@ const handleRate = async (q) => {
     reviewQueue.value.push(updatedWord)
   }
 
-  // Ir al siguiente
-  showAnswer.value = false
-  currentIndex.value++
-
-  if (currentIndex.value >= reviewQueue.value.length) {
-    isSessionComplete.value = true
+  // Comprobar si alcanzó 5 repasos
+  if (updatedWord.r === 5) {
+    wordToDecide.value = updatedWord
+    showMasteryModal.value = true
+  } else {
+    advanceToNext()
   }
+}
+
+const handleKeepWord = () => {
+  showMasteryModal.value = false
+  wordToDecide.value = null
+  advanceToNext()
+}
+
+const handleDeleteWord = async () => {
+  if (wordToDecide.value) {
+    const wordId = wordToDecide.value.id
+    try {
+      await deleteWordFromVault(wordId)
+      await syncDeleteWordFromCloud(wordId)
+    } catch (error) {
+      console.error('Error deleting mastered word:', error)
+    }
+  }
+  showMasteryModal.value = false
+  wordToDecide.value = null
+  advanceToNext()
 }
 
 // Función para cargar las palabras pendientes de repaso
 const loadDueWords = async () => {
   try {
+    const allWords = await getAllVaultWords()
+    if (allWords.length === 0) {
+      hasNoWords.value = true
+      isLoading.value = false
+      return
+    }
+
     const words = await getWordsForReviewToday()
     // Mezclar aleatoriamente el orden de las palabras
     reviewQueue.value = words.sort(() => Math.random() - 0.5)
@@ -110,13 +151,17 @@ onMounted(() => {
     <div class="w-full max-w-2xl">
       <!-- Encabezado -->
       <div class="text-center mt-6 sm:mt-8 mb-6 relative">
+        <button @click="handleGoBack" class="absolute left-0 top-0 sm:top-1 p-2 bg-zinc-800 hover:bg-zinc-700 text-slate-300 rounded-xl transition-colors cursor-pointer flex items-center justify-center z-10" aria-label="Volver" title="Volver al inicio">
+          <ChevronLeft class="w-5 h-5" />
+        </button>
+
         <h1 class="text-3xl sm:text-4xl font-bold text-slate-50 mb-2">Tarjetas de Repaso</h1>
-        <p class="text-zinc-400 mb-6 sm:mb-8 text-sm sm:text-base" v-if="!isSessionComplete && !isLoading">
+        <p class="text-zinc-400 mb-6 sm:mb-8 text-sm sm:text-base" v-if="!isSessionComplete && !isLoading && !hasNoWords">
           Palabra {{ currentIndex + 1 }} de {{ reviewQueue.length }}
         </p>
 
         <!-- Barra de Progreso -->
-        <div class="w-full bg-zinc-800 rounded-full h-1.5 mb-6" v-if="!isSessionComplete && !isLoading">
+        <div class="w-full bg-zinc-800 rounded-full h-1.5 mb-6" v-if="!isSessionComplete && !isLoading && !hasNoWords">
           <div class="bg-indigo-500 h-1.5 rounded-full transition-all duration-300" :style="{ width: `${((currentIndex) / reviewQueue.length) * 100}%` }"></div>
         </div>
       </div>
@@ -125,6 +170,22 @@ onMounted(() => {
       <div v-if="isLoading" class="text-center py-16 space-y-4">
         <div class="inline-block w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
         <p class="text-zinc-400 tracking-wide">Preparando tu sesión de estudio...</p>
+      </div>
+
+      <!-- Estado Sin Palabras -->
+      <div v-else-if="hasNoWords" class="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 sm:p-12 text-center space-y-6 shadow-xl relative overflow-hidden group">
+        <div class="absolute -top-10 -right-10 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl group-hover:bg-indigo-500/20 transition-all duration-500"></div>
+        
+        <div class="w-20 h-20 bg-indigo-500/20 border border-indigo-500/30 rounded-2xl flex items-center justify-center mx-auto mb-6 transform group-hover:scale-110 transition-transform duration-500">
+          <BookOpen class="w-10 h-10 text-indigo-400" />
+        </div>
+        <h2 class="text-2xl sm:text-3xl font-bold text-slate-50">¡Aún no hay palabras!</h2>
+        <p class="text-zinc-400 text-sm sm:text-base max-w-md mx-auto leading-relaxed">
+          No tienes ninguna palabra en tu vocabulario. Añade algunas palabras primero para poder repasarlas.
+        </p>
+        <button @click="handleGoBack" class="mt-8 mx-auto bg-zinc-800 hover:bg-zinc-700 text-slate-300 font-medium px-6 py-3 rounded-xl transition-colors text-sm cursor-pointer flex items-center gap-2">
+          Ir al Vocabulario
+        </button>
       </div>
 
       <!-- Estado de sesión completa -->
@@ -230,6 +291,30 @@ onMounted(() => {
           </div>
         </div>
 
+      </div>
+    </div>
+
+    <!-- Modal de Maestría de Palabra -->
+    <div v-if="showMasteryModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="handleKeepWord"></div>
+      <div class="bg-zinc-900 border border-zinc-700/50 rounded-2xl p-6 sm:p-8 w-full max-w-sm relative z-10 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+        <div class="flex flex-col items-center text-center space-y-4">
+          <div class="w-16 h-16 bg-amber-500/10 rounded-full flex items-center justify-center border border-amber-500/20">
+            <AlertTriangle class="w-8 h-8 text-amber-500" />
+          </div>
+          <h2 class="text-xl font-bold text-slate-50">¡Palabra Dominada!</h2>
+          <p class="text-zinc-400 text-sm">
+            Has repasado <span class="text-slate-200 font-semibold uppercase">"{{ wordToDecide?.word }}"</span> 5 veces exitosamente. ¿Qué deseas hacer con esta palabra?
+          </p>
+          <div class="flex flex-col gap-3 w-full pt-4">
+            <button @click="handleKeepWord" class="w-full bg-zinc-800 hover:bg-zinc-700 text-slate-300 font-medium px-4 py-3 rounded-xl transition-colors text-sm cursor-pointer border border-zinc-700/50">
+              Conservar en mi lista
+            </button>
+            <button @click="handleDeleteWord" class="w-full bg-red-500 hover:bg-red-600 text-white font-medium px-4 py-3 rounded-xl transition-colors shadow-lg shadow-red-500/20 text-sm cursor-pointer">
+              Eliminar palabra
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </div>

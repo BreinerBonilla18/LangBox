@@ -11,7 +11,7 @@
 
 - **🔍 AI-Powered Word Search**: Get comprehensive word definitions, examples, phonetics, and mnemonics using Google Gemini AI
 - **📚 Vocabulary Management**: Save and organize your words with expandable cards showing detailed information
-- **🧠 Spaced Repetition System**: Built-in SRS algorithm to optimize learning retention (coming soon)
+- **🧠 Spaced Repetition System**: Built-in SRS algorithm to optimize learning retention
 - **💾 Local Storage**: Persistent storage using IndexedDB via Dexie - your data stays on your device
 - **☁️ Cloud Sync**: Automatic synchronization with Supabase when logged in with Google account
 - **🔐 Secure Authentication**: Google OAuth integration via Supabase for secure user authentication
