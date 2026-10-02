@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lint": "eslint .",
+    "pwa:assets": "pwa-assets-generator -c pwa-assets.config.cjs public/langbox.svg && node scripts/flatten-pwa-icons.mjs"
   },
   "dependencies": {
     "@lucide/vue": "^1.34.0",
@@ -20,10 +22,14 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@vite-pwa/assets-generator": "^1.0.4",
     "@vitejs/plugin-vue": "^6.0.8",
     "eslint": "^10.10.0",
     "eslint-plugin-vue": "^10.11.0",
     "globals": "^17.12.0",
-    "vite": "^8.2.2"
+    "sharp": "^0.35.5",
+    "vite": "^8.2.2",
+    "vite-plugin-pwa": "^1.3.0",
+    "workbox-window": "^7.4.1"
   }
 }

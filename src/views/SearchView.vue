@@ -2,11 +2,13 @@
 import { enrichWordWithGemini } from "../core/api/aiService"
 import { saveWordToVault, getWordFromVault } from '../core/api/wordStorage'
 import { syncNewWordToCloud } from '../core/api/syncService'
-import { ref, onMounted, watch } from 'vue'
+import { useNetworkStore } from '../stores/networkStore'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Volume2 } from '@lucide/vue'
+import { Volume2, WifiOff } from '@lucide/vue'
 
 const router = useRouter()
+const networkStore = useNetworkStore()
 
 // Definir props
 const props = defineProps({
@@ -19,15 +21,38 @@ const props = defineProps({
 const errorMessage = ref('')
 const isLoading = ref(true)
 
+// `isFromCache` marca que lo que se muestra no viene de la IA sino de IndexedDB.
+const isFromCache = ref(false)
+
 const wordData = ref(null)
 
-// Función para buscar datos de la palabra
+// El buscador es la única función que depende de la nube: sin conexión no se
+// consulta la IA, y en su lugar se ofrece la copia local si la palabra ya fue
+// guardada antes. Nunca se lanza una petición que solo puede fallar.
 const fetchWordData = async (wordToSearch) => {
   if (!wordToSearch) return
 
   isLoading.value = true
   errorMessage.value = ''
   wordData.value = null
+  isFromCache.value = false
+
+  const wordId = wordToSearch.toLowerCase().trim()
+
+  if (!networkStore.isOnline) {
+    const localWord = await getWordFromVault(wordId).catch(() => undefined)
+
+    if (localWord && !localWord.is_deleted) {
+      wordData.value = localWord
+      isFromCache.value = true
+    } else {
+      errorMessage.value =
+        'El buscador necesita conexión a internet y esta palabra todavía no está en tu vocabulario.'
+    }
+
+    isLoading.value = false
+    return
+  }
 
   try {
     const data = await enrichWordWithGemini(wordToSearch)
@@ -39,6 +64,9 @@ const fetchWordData = async (wordToSearch) => {
     isLoading.value = false
   }
 }
+
+// Texto del botón Guardar: sin conexión la palabra entra igual en el vault local.
+const saveButtonLabel = computed(() => (isFromCache.value ? 'Guardada' : 'Guardar'))
 
 // Función para pronunciar la palabra
 const handleSpeak = (text) => {
@@ -52,6 +80,13 @@ const handleSpeak = (text) => {
 // Función para guardar la palabra
 const handleSave = async () => {
   if (!wordData.value) return
+
+  // Lo que se muestra ya venía del vault local: no hay nada nuevo que guardar
+  // y volver a escribirlo solo generaría una subida innecesaria a la nube.
+  if (isFromCache.value) {
+    router.push('/vocabulary')
+    return
+  }
 
   const wordId = props.word.toLowerCase().trim()
   const rawData = JSON.parse(JSON.stringify(wordData.value))
@@ -102,6 +137,12 @@ onMounted(() => {
 watch(() => props.word, (newWord) => {
   fetchWordData(newWord)
 })
+
+// Al recuperar la conexión se reintenta solo lo que quedó bloqueado por estar
+// offline, para que el usuario no tenga que recargar la página a mano.
+watch(() => networkStore.isOnline, (online) => {
+  if (online && errorMessage.value) fetchWordData(props.word)
+})
 </script>
 
 <template>
@@ -127,6 +168,13 @@ watch(() => props.word, (newWord) => {
 
     <!-- Contenido Principal -->
     <div v-else-if="wordData" class="space-y-6">
+
+      <!-- Origen de los datos: sin conexión lo que se ve es la copia local -->
+      <div v-if="isFromCache"
+        class="flex items-start gap-2.5 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-300">
+        <WifiOff class="mt-0.5 h-4 w-4 shrink-0" />
+        <span>Estás sin conexión: se muestra la copia guardada en este dispositivo, no la consulta de IA.</span>
+      </div>
       
       <!-- Palabra Consultada -->
       <header class="border-b border-zinc-800 pb-4 flex flex-col sm:flex-row items-start sm:items-baseline justify-between gap-3 sm:gap-4">
@@ -214,7 +262,7 @@ watch(() => props.word, (newWord) => {
           @click="handleSave"
           class="w-full sm:w-auto bg-indigo-500 hover:bg-indigo-600 text-white font-medium px-6 py-3 rounded-xl transition-colors shadow-lg shadow-indigo-500/20 text-sm cursor-pointer"
         >
-          Guardar
+          {{ saveButtonLabel }}
         </button>
       </footer>
 

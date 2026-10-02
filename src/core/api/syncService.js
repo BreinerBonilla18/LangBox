@@ -1,5 +1,6 @@
 import { supabase } from '../db/supabaseClient'
 import { db } from '../db/database'
+import { isBrowserOnline } from '../utils/online'
 
 // Columnas reales de la tabla 'words' en Supabase.
 // Cualquier clave local que no esté aquí (por ejemplo 'is_deleted') nunca se envía.
@@ -25,9 +26,23 @@ const SRS_COLUMNS = ['r', 'ef', 'i', 'nrd']
 // Valores por defecto del SRS para una palabra recién creada
 const DEFAULT_SRS = { r: 0, ef: 2.5, i: 1 }
 
+// Tipos de operación que pueden quedar encoladas mientras no hay conexión.
+const OP_UPSERT = 'upsert'
+const OP_DELETE = 'delete'
+
+// Modo de un 'upsert' pendiente. Importa porque define si al vaciar la cola se
+// respeta el SRS remoto: la nube siempre es la fuente de verdad del SRS, salvo
+// que la operación nace de una revisión real hecha en ESTE dispositivo.
+const MODE_CONTENT = 'content' // Guarda el contenido sin pisar el SRS de la nube.
+const MODE_SRS = 'srs' // Revisión real: el SRS local es lo que debe subir.
+
 // Promesa de la sincronización de inicio en curso, para que ninguna escritura
 // de SRS se antipegue a la descarga autoritativa de la nube.
 let pendingSync = null
+
+// Promesa del vaciado de la cola, para no lanzar dos volcados a la vez
+// (pueden coincidir una reconexión y un evento de foco).
+let pendingFlush = null
 
 /**
  * @function todayISO
@@ -220,11 +235,17 @@ async function performLoginSync(userId) {
  * La nube es la fuente de verdad del SRS: se fusiona primero nube -> local y
  * solo se envían a la nube las palabras que todavía no existen allí, de modo
  * que el progreso de repetición de otros dispositivos nunca se destruye.
+ * Tras la fusión se vacía la cola offline, para que un avance de repaso hecho
+ * sin conexión termine ganándole a la copia descargada de la nube.
  * @param {string} userId - UUID del usuario autenticado actual.
  * @returns {Promise<void>}
  */
 export async function syncLocalWordsToCloudOnLogin(userId) {
   if (!userId) return
+
+  // Sin red la fusión no puede ocurrir: el vault local queda intacto y la cola
+  // se conservará hasta que `flushPendingOps` pueda ejecutarse.
+  if (!isBrowserOnline()) return
 
   const sync = performLoginSync(userId)
   pendingSync = sync
@@ -234,6 +255,8 @@ export async function syncLocalWordsToCloudOnLogin(userId) {
   } finally {
     if (pendingSync === sync) pendingSync = null
   }
+
+  await flushPendingOps()
 }
 
 /**
@@ -253,10 +276,188 @@ export async function waitForPendingSync() {
 }
 
 /**
+ * @function enqueuePendingOp
+ * @description Encola una operación para subirla cuando vuelva la conexión.
+ * Como la clave primaria de 'pendingOps' es `[word_id+type]`, encolar dos veces
+ * la misma operación la SOBRESCRIBE: siempre gana el estado más reciente.
+ * @param {string} type - OP_UPSERT u OP_DELETE
+ * @param {string} wordId
+ * @param {object} payload - Palabra local completa (solo para OP_UPSERT)
+ * @param {string} mode - MODE_CONTENT o MODE_SRS (solo para OP_UPSERT)
+ * @returns {Promise<void>}
+ */
+async function enqueuePendingOp(type, wordId, payload, mode) {
+  try {
+    await db.pendingOps.put({
+      word_id: wordId,
+      type,
+      mode: mode ?? MODE_SRS,
+      payload: payload ? sanitizeForInsert(payload, 'pending') : null,
+      created_at: new Date().toISOString()
+    })
+    console.log(`[sync] Operación "${type}" encolada para "${wordId}" (${mode ?? '-'}): sin conexión.`)
+  } catch (error) {
+    console.error('Error encolando operación pendiente:', error)
+  }
+}
+
+/**
+ * @function countPendingOps
+ * @description Número de operaciones aún no subidas a la nube.
+ * @returns {Promise<number>}
+ */
+export async function countPendingOps() {
+  return await db.pendingOps.count()
+}
+
+/**
+ * @function pushWordToCloud
+ * @description Sube el contenido de una palabra preservando el SRS remoto:
+ * la inserta si no existe en la nube y, si ya existe, solo actualiza el
+ * significado, la fonética, los sinónimos y los mnemotecnios.
+ * @param {string} userId
+ * @param {object} payload - Palabra ya saneada para la nube
+ * @returns {Promise<boolean>} `true` si la nube aceptó la escritura
+ */
+async function pushWordToCloud(userId, payload) {
+  const cloudSrs = await readCloudSrs(payload.id, userId)
+
+  if (!cloudSrs) {
+    const { error } = await supabase.from('words').insert(payload)
+    if (error) {
+      console.error('Error al guardar la palabra en Supabase:', error)
+      return false
+    }
+    return true
+  }
+
+  const { error } = await supabase
+    .from('words')
+    .update({
+      word: payload.word,
+      phonetic: payload.phonetic ?? null,
+      meanings: payload.meanings ?? [],
+      mnemonics: payload.mnemonics ?? [],
+      synonyms: payload.synonyms ?? [],
+      r: cloudSrs.r,
+      ef: cloudSrs.ef,
+      i: cloudSrs.i,
+      nrd: cloudSrs.nrd
+    })
+    .eq('id', payload.id)
+    .eq('user_id', userId)
+
+  if (error) {
+    console.error('Error actualizando la palabra en Supabase:', error)
+    return false
+  }
+  return true
+}
+
+/**
+ * @function pushSrsToCloud
+ * @description Escribe el estado SRS completo (r/ef/i/nrd) de una palabra.
+ * @param {string} userId
+ * @param {object} payload - Palabra ya saneada para la nube
+ * @returns {Promise<boolean>} `true` si la nube aceptó la escritura
+ */
+async function pushSrsToCloud(userId, payload) {
+  const { error } = await supabase.from('words').upsert(payload)
+  if (error) {
+    console.error('Error sincronizando con Supabase:', error)
+    return false
+  }
+  return true
+}
+
+/**
+ * @function pushDeleteToCloud
+ * @description Elimina definitivamente la palabra en la nube y, si la nube lo
+ * confirma, descarta también la lápida local (`is_deleted`) que la representaba.
+ * @param {string} userId
+ * @param {string} wordId
+ * @returns {Promise<boolean>} `true` si la nube confirmó el borrado
+ */
+async function pushDeleteToCloud(userId, wordId) {
+  const { error } = await supabase
+    .from('words')
+    .delete()
+    .eq('id', wordId)
+    .eq('user_id', userId)
+
+  if (error) {
+    console.error('Error al eliminar palabra de Supabase:', error)
+    return false
+  }
+
+  // La nube ya no la tiene: la lápida local cumplió su función.
+  await db.words.delete(wordId).catch(err =>
+    console.error('Error limpiando la lápida local tras el borrado en la nube:', err)
+  )
+  return true
+}
+
+/**
+ * @function flushPendingOps
+ * @description Vuelca en la nube todas las operaciones acumuladas durante el
+ * periodo offline. Cada operación solo se descarta de la cola si la nube la
+ * confirmó, de modo que un fallo intermedio nunca pierde cambios.
+ * @returns {Promise<void>}
+ */
+export async function flushPendingOps() {
+  if (pendingFlush) return pendingFlush
+  if (!isBrowserOnline()) return
+
+  const flush = (async () => {
+    const ops = await db.pendingOps.toArray()
+    if (ops.length === 0) return
+
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return // Sin sesión no hay a quién subirle los cambios.
+    const userId = session.user.id
+
+    let synced = 0
+
+    for (const op of ops) {
+      try {
+        let ok = false
+
+        if (op.type === OP_DELETE) {
+          ok = await pushDeleteToCloud(userId, op.word_id)
+        } else if (op.mode === MODE_CONTENT) {
+          ok = await pushWordToCloud(userId, { ...op.payload, user_id: userId })
+        } else {
+          ok = await pushSrsToCloud(userId, { ...op.payload, user_id: userId })
+        }
+
+        if (ok) {
+          await db.pendingOps.delete([op.word_id, op.type])
+          synced += 1
+        }
+      } catch (error) {
+        console.error(`Error vaciando la operación pendiente de "${op.word_id}":`, error)
+        // Se detiene el volcado: si la red volvió a caerse, el resto tampoco pasa.
+        break
+      }
+    }
+
+    if (synced > 0) console.log(`[sync] ${synced} operación(es) pendiente(s) sincronizadas.`)
+  })()
+
+  pendingFlush = flush
+  try {
+    await flush
+  } finally {
+    if (pendingFlush === flush) pendingFlush = null
+  }
+}
+
+/**
  * @function syncWordToCloud
  * @description Actualiza el progreso SRS de una palabra ya sincronizada en la nube.
  * Es la única vía que escribe `r/ef/i/nrd` sobre un registro existente, y solo
- * se usa tras una revisión real en las flashcards.
+ * se usa tras una revisión real en las flashcards. Si no hay red, el avance se
+ * encola para no perder el progreso de repaso.
  * @param {object} wordPayload - Palabra con su SRS ya calculado
  * @returns {Promise<void>}
  */
@@ -276,11 +477,13 @@ export async function syncWordToCloud(wordPayload) {
     return
   }
 
-  const { error } = await supabase.from('words').upsert(payload)
-
-  if (error) {
-    console.error('Error sincronizando con Supabase:', error)
+  if (!isBrowserOnline()) {
+    await enqueuePendingOp(OP_UPSERT, payload.id, wordPayload, MODE_SRS)
+    return
   }
+
+  const ok = await pushSrsToCloud(session.user.id, payload)
+  if (!ok) await enqueuePendingOp(OP_UPSERT, payload.id, wordPayload, MODE_SRS)
 }
 
 /**
@@ -288,7 +491,7 @@ export async function syncWordToCloud(wordPayload) {
  * @description Inserta una palabra recién guardada sin alterar el SRS que ya exista
  * en la nube. Si la palabra ya está sincronizada desde otro dispositivo, solo se
  * actualiza el contenido (significado, fonética, sinónimos...) y se preserva
- * intacto su `r/ef/i/nrd`.
+ * intacto su `r/ef/i/nrd`. Si no hay red, queda encolada con ese mismo criterio.
  * @param {object} wordPayload - Palabra guardada localmente
  * @returns {Promise<void>}
  */
@@ -299,43 +502,21 @@ export async function syncNewWordToCloud(wordPayload) {
 
   if (!session) return // Si no hay usuario autenticado, opera solo localmente
 
-  const userId = session.user.id
-  const payload = sanitizeForInsert(wordPayload, userId)
-  const cloudSrs = await readCloudSrs(payload.id, userId)
-
-  if (!cloudSrs) {
-    // Palabra nueva: se inserta con su SRS inicial
-    const { error } = await supabase.from('words').insert(payload)
-    if (error) console.error('Error al guardar la palabra en Supabase:', error)
+  if (!isBrowserOnline()) {
+    await enqueuePendingOp(OP_UPSERT, wordPayload.id, wordPayload, MODE_CONTENT)
     return
   }
 
-  // Ya existía en la nube: se actualiza únicamente el contenido, nunca el SRS
-  const { error } = await supabase
-    .from('words')
-    .update({
-      word: payload.word,
-      phonetic: payload.phonetic ?? null,
-      meanings: payload.meanings ?? [],
-      mnemonics: payload.mnemonics ?? [],
-      synonyms: payload.synonyms ?? [],
-      r: cloudSrs.r,
-      ef: cloudSrs.ef,
-      i: cloudSrs.i,
-      nrd: cloudSrs.nrd
-    })
-    .eq('id', payload.id)
-    .eq('user_id', userId)
-
-  if (error) {
-    console.error('Error actualizando la palabra en Supabase:', error)
-  }
+  const payload = sanitizeForInsert(wordPayload, session.user.id)
+  const ok = await pushWordToCloud(session.user.id, payload)
+  if (!ok) await enqueuePendingOp(OP_UPSERT, payload.id, wordPayload, MODE_CONTENT)
 }
 
 /**
  * @function syncDeleteWordFromCloud
  * @description Remueve permanentemente una palabra de la base de datos central en la nube.
- * Solo afecta si el usuario cuenta con una sesión válida.
+ * Solo afecta si el usuario cuenta con una sesión válida. Sin conexión, el borrado
+ * se encola en lugar de descartarse en silencio.
  * @param {string} id - Identificador único de la palabra a eliminar
  * @returns {Promise<void>}
  */
@@ -343,14 +524,11 @@ export async function syncDeleteWordFromCloud(id) {
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) return // Si no hay usuario autenticado, no hacer nada
 
-  // Eliminar la palabra de Supabase
-  const { error } = await supabase 
-    .from('words')
-    .delete()
-    .eq('id', id)
-    .eq('user_id', session.user.id)
-
-  if (error) {
-    console.error('Error al eliminar palabra de Supabase:', error)
+  if (!isBrowserOnline()) {
+    await enqueuePendingOp(OP_DELETE, id)
+    return
   }
+
+  const ok = await pushDeleteToCloud(session.user.id, id)
+  if (!ok) await enqueuePendingOp(OP_DELETE, id)
 }

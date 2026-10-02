@@ -1,14 +1,26 @@
 <!doctype html>
-<html lang="en">
+<html lang="es">
 
 <head>
   <meta charset="UTF-8" />
-  <link rel="icon" type="image/svg+xml" href="/src/assets/langbox.svg" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link href="/src/style.css" rel="stylesheet">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>LangBox - Tu repositorio de vocabulario</title>
   <meta name="description"
     content="Guarda, organiza y practica tu vocabulario en inglés con sincronización en la nube y manejo local." />
+
+  <!-- PWA: el manifest lo genera vite-plugin-pwa e inyecta la etiqueta solo -->
+  <link rel="icon" type="image/svg+xml" href="/langbox.svg" />
+  <link rel="alternate icon" href="/favicon.ico" sizes="48x48" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
+
+  <!-- El color de la barra del sistema en Android y en la interfaz de iOS.
+       Debe coincidir con `theme_color` del manifest. -->
+  <meta name="theme-color" content="#09090b" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="LangBox" />
+
   <meta property="og:title" content="LangBox" />
   <meta property="og:description" content="Aprende y repasa vocabulario técnico y cotidiano." />
   <meta property="og:image" content="https://langbox-kappa.vercel.app/og-image.png" />

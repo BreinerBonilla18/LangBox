@@ -1,20 +1,53 @@
 <script setup>
-import { Search, Book, Brain, LogOut } from '@lucide/vue'
+import { Search, Book, Brain, LogOut, Download, Share } from '@lucide/vue'
 import { useAuthStore } from '../stores/authStore'
+import { useNetworkStore } from '../stores/networkStore'
+import { useInstallPrompt } from '../composables/useInstallPrompt'
 import langboxLogo from '../assets/langbox.svg'
 import googleIcon from '../assets/google.svg'
 import { useRouter } from 'vue-router'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 
 const authStore = useAuthStore()
+const networkStore = useNetworkStore()
+const { isInstalled, needsManualInstall, needsBrowserMenu, promptInstall } =
+  useInstallPrompt()
 const router = useRouter()
 
 const searchQuery = ref('')
+const showIosHelp = ref(false)
+const showBrowserMenuHelp = ref(false)
+
+// El buscador consulta la IA de Gemini, así que es la única función que
+// depende de internet. Sin conexión se desactiva en lugar de fallar.
+const searchDisabled = computed(() => !networkStore.isOnline)
+
+const searchPlaceholder = computed(() =>
+  searchDisabled.value ? 'Requiere conexión a internet...' : 'Escribe una palabra...'
+)
+
+// Estado real de la nube, en lugar del texto fijo "Sincronizado" que antes mentía.
+const syncLabel = computed(() => {
+  if (!networkStore.isOnline) return 'Sin conexión'
+  if (networkStore.isSyncing) return 'Sincronizando...'
+  if (networkStore.hasPendingSync) return 'Pendiente de subir'
+  return 'Sincronizado'
+})
+
+const syncDotClass = computed(() => {
+  if (!networkStore.isOnline) return 'bg-amber-400'
+  if (networkStore.isSyncing || networkStore.hasPendingSync) return 'bg-amber-400'
+  return 'bg-emerald-400'
+})
 
 // Llevar al usuario a la página de búsqueda cuando se realiza una búsqueda
 const handleSearch = () => {
   const query = searchQuery.value.trim()
   if (!query) return
+
+  // Guarda de seguridad: aunque el input esté deshabilitado, la tecla `Enter` o
+  // un envío del formulario no deberían lanzar una consulta que va a fallar.
+  if (searchDisabled.value) return
 
   const capitalizedQuery = query.charAt(0).toUpperCase() + query.slice(1).toLowerCase()
 
@@ -26,6 +59,8 @@ const goToFlashcards = () => router.push('/flashcards')
 
 // Manejar inicio de sesión con Google
 const handleGoogleLogin = async () => {
+  if (!networkStore.isOnline) return
+
   try {
     await authStore.loginWithGoogle()
   } catch (error) {
@@ -40,6 +75,17 @@ const handleLogout = async () => {
   } catch (error) {
     console.error('Error al cerrar sesión:', error)
   }
+}
+
+// El navegador no siempre ofrece su diálogo de instalación: iOS nunca, y
+// Chromium deja de ofrecerlo si la app se instaló una vez. En ambos casos el
+// botón degrada a una vía manual en vez de desaparecer.
+const handleInstall = async () => {
+  const outcome = await promptInstall()
+  if (outcome === 'accepted') return
+
+  if (needsManualInstall.value) showIosHelp.value = true
+  else showBrowserMenuHelp.value = true
 }
 
 const cards = [
@@ -89,8 +135,8 @@ const cards = [
               {{ authStore.user.user_metadata?.full_name || authStore.user.email }}
             </span>
 
-            <span class="text-[10px] text-emerald-400 flex items-center gap-1">
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Sincronizado
+            <span class="text-[10px] flex items-center gap-1" :class="networkStore.isOnline ? 'text-emerald-400' : 'text-amber-400'">
+              <span class="w-1.5 h-1.5 rounded-full" :class="syncDotClass"></span> {{ syncLabel }}
             </span>
           </div>
         </div>
@@ -102,8 +148,9 @@ const cards = [
       </div>
 
       <!-- Estado No Autenticado (Botón Login con Google) -->
-      <button v-else @click="handleGoogleLogin"
-        class="flex items-center gap-2.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-slate-200 text-xs font-medium px-4 py-2.5 rounded-xl transition-all shadow-md cursor-pointer hover:border-indigo-500/40">
+      <button v-else @click="handleGoogleLogin" :disabled="!networkStore.isOnline"
+        :title="networkStore.isOnline ? 'Iniciar sesión con Google' : 'Iniciar sesión requiere conexión a internet'"
+        class="flex items-center gap-2.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-slate-200 text-xs font-medium px-4 py-2.5 rounded-xl transition-all shadow-md cursor-pointer hover:border-indigo-500/40 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-zinc-900 disabled:hover:border-zinc-800">
         <img :src="googleIcon" alt="Google" class="w-4 h-4" />
         <span>Entrar con Google</span>
       </button>
@@ -118,19 +165,25 @@ const cards = [
     </div>
 
     <!-- Barra de búsqueda -->
-    <div class="w-full max-w-2xl mb-8">
+    <div class="w-full max-w-2xl mb-3">
       <div class="relative flex gap-2">
         <Search
           class="absolute left-3 sm:left-4 top-1/2 transform -translate-y-1/2 text-zinc-400 w-4 h-4 sm:w-5 sm:h-5" />
 
-        <input v-model="searchQuery" @keyup.enter="handleSearch" type="text" placeholder="Escribe una palabra..."
-          class="w-full py-3 sm:py-4 pl-10 sm:pl-12 pr-3 sm:pr-4 bg-zinc-900 border border-zinc-800 rounded-xl text-sm sm:text-base text-slate-50 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all placeholder:text-zinc-500" />
+        <input v-model="searchQuery" @keyup.enter="handleSearch" type="text"
+          :placeholder="searchPlaceholder" :disabled="searchDisabled"
+          class="w-full py-3 sm:py-4 pl-10 sm:pl-12 pr-3 sm:pr-4 bg-zinc-900 border border-zinc-800 rounded-xl text-sm sm:text-base text-slate-50 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all placeholder:text-zinc-500 disabled:opacity-50 disabled:cursor-not-allowed" />
 
-        <button @click="handleSearch"
-          class="bg-indigo-500 text-white px-3 sm:px-4 py-2 rounded-xl cursor-pointer hover:bg-indigo-600 transition-colors shadow-lg shadow-indigo-500/20 text-sm sm:text-base whitespace-nowrap">
+        <button @click="handleSearch" :disabled="searchDisabled"
+          class="bg-indigo-500 text-white px-3 sm:px-4 py-2 rounded-xl cursor-pointer hover:bg-indigo-600 transition-colors shadow-lg shadow-indigo-500/20 text-sm sm:text-base whitespace-nowrap disabled:bg-zinc-800 disabled:text-zinc-500 disabled:shadow-none disabled:cursor-not-allowed disabled:hover:bg-zinc-800">
           Buscar
         </button>
       </div>
+
+      <!-- Aviso explícito de por qué el buscador no responde -->
+      <p v-if="searchDisabled" class="mt-2 text-xs text-amber-400/90 text-center sm:text-left">
+        El buscador usa IA en la nube, así que necesita conexión. Tu vocabulario y tus tarjetas funcionan sin internet.
+      </p>
     </div>
 
     <!-- Cards -->
@@ -146,6 +199,41 @@ const cards = [
           <h2 class="text-lg sm:text-xl font-semibold text-slate-50">{{ card.title }}</h2>
         </div>
         <p class="text-zinc-400 text-xs sm:text-sm">{{ card.description }}</p>
+      </div>
+    </div>
+
+    <!-- Instalación como app: es lo que habilita el arranque sin conexión.
+         El botón se muestra siempre que la app no esté instalada. Si atarlo a
+         `beforeinstallprompt` lo haría desaparecer justo cuando el navegador
+         deja de ofrecer el evento, que es cuando más falta hace. -->
+    <div class="w-full max-w-2xl mt-6 md:mt-8">
+      <button v-if="!isInstalled" @click="handleInstall"
+        class="w-full flex items-center justify-center gap-2 bg-zinc-900/70 hover:bg-zinc-800 border border-zinc-800 text-slate-300 text-xs sm:text-sm py-3 px-4 rounded-xl transition-colors cursor-pointer hover:border-indigo-500/40">
+        <component :is="needsManualInstall ? Share : Download" class="w-4 h-4" />
+        <span>{{ needsManualInstall ? 'Cómo instalar en iOS' : 'Instalar LangBox' }}</span>
+      </button>
+
+      <p v-else
+        class="text-center text-xs text-emerald-400/90">
+        App instalada
+      </p>
+
+      <!-- iOS no ofrece diálogo de instalación: hay que explicar los pasos -->
+      <div v-if="showIosHelp && needsManualInstall"
+        class="mt-3 bg-zinc-900 border border-zinc-800 rounded-xl p-4 text-xs text-zinc-400 space-y-1.5">
+        <p class="text-slate-300 font-medium text-sm">Añadir a pantalla de inicio</p>
+        <p>1. Pulsa el botón de compartir (el cuadro con flecha hacia arriba) en la barra de Safari.</p>
+        <p>2. Elige <span class="text-slate-300">«Añadir a pantalla de inicio»</span>.</p>
+        <p>3. Confirma. LangBox se abrirá como app y seguirá funcionando sin internet.</p>
+      </div>
+
+      <!-- Fuera de iOS la instalación también es un único clic, solo que en el
+           menú del navegador en lugar de en un diálogo. -->
+      <div v-if="showBrowserMenuHelp && needsBrowserMenu"
+        class="mt-3 bg-zinc-900 border border-zinc-800 rounded-xl p-4 text-xs text-zinc-400 space-y-1.5">
+        <p class="text-slate-300 font-medium text-sm">Instalar desde el navegador</p>
+        <p>Pulsa el menú de tu navegador (el de los tres puntos, arriba a la derecha) y elige
+          <span class="text-slate-300">«Instalar aplicación»</span>.</p>
       </div>
     </div>
 
