@@ -10,13 +10,11 @@ import { ref, computed } from 'vue'
 
 const authStore = useAuthStore()
 const networkStore = useNetworkStore()
-const { isInstalled, needsManualInstall, needsBrowserMenu, promptInstall } =
-  useInstallPrompt()
+const { isInstalled, canPrompt, needsManualInstall, promptInstall } = useInstallPrompt()
 const router = useRouter()
 
 const searchQuery = ref('')
 const showIosHelp = ref(false)
-const showBrowserMenuHelp = ref(false)
 
 // El buscador consulta la IA de Gemini, así que es la única función que
 // depende de internet. Sin conexión se desactiva en lugar de fallar.
@@ -77,15 +75,18 @@ const handleLogout = async () => {
   }
 }
 
-// El navegador no siempre ofrece su diálogo de instalación: iOS nunca, y
-// Chromium deja de ofrecerlo si la app se instaló una vez. En ambos casos el
-// botón degrada a una vía manual en vez de desaparecer.
+// Instalar exige conexión: el diálogo del navegador solo se ofrece con el
+// service worker registrado, y sin red no habría nada que instalar. Tampoco
+// tiene sentido ofrecérselo a quien ya la tiene.
+const showInstall = computed(
+  () => networkStore.isOnline && !isInstalled.value && (canPrompt.value || needsManualInstall.value)
+)
+
+// iOS no ofrece diálogo de instalación, así que el botón abre las
+// instrucciones en lugar de lanzar un diálogo que no existe.
 const handleInstall = async () => {
   const outcome = await promptInstall()
-  if (outcome === 'accepted') return
-
-  if (needsManualInstall.value) showIosHelp.value = true
-  else showBrowserMenuHelp.value = true
+  if (outcome === 'unavailable') showIosHelp.value = true
 }
 
 const cards = [
@@ -203,17 +204,16 @@ const cards = [
     </div>
 
     <!-- Instalación como app: es lo que habilita el arranque sin conexión.
-         El botón se muestra siempre que la app no esté instalada. Si atarlo a
-         `beforeinstallprompt` lo haría desaparecer justo cuando el navegador
-         deja de ofrecer el evento, que es cuando más falta hace. -->
+         Solo se ofrece con red y si la app no está instalada ya, porque fuera de
+         iOS no hay más vía que el diálogo nativo del navegador. -->
     <div class="w-full max-w-2xl mt-6 md:mt-8">
-      <button v-if="!isInstalled" @click="handleInstall"
+      <button v-if="showInstall" @click="handleInstall"
         class="w-full flex items-center justify-center gap-2 bg-zinc-900/70 hover:bg-zinc-800 border border-zinc-800 text-slate-300 text-xs sm:text-sm py-3 px-4 rounded-xl transition-colors cursor-pointer hover:border-indigo-500/40">
         <component :is="needsManualInstall ? Share : Download" class="w-4 h-4" />
         <span>{{ needsManualInstall ? 'Cómo instalar en iOS' : 'Instalar LangBox' }}</span>
       </button>
 
-      <p v-else
+      <p v-else-if="isInstalled"
         class="text-center text-xs text-emerald-400/90">
         App instalada
       </p>
@@ -225,15 +225,6 @@ const cards = [
         <p>1. Pulsa el botón de compartir (el cuadro con flecha hacia arriba) en la barra de Safari.</p>
         <p>2. Elige <span class="text-slate-300">«Añadir a pantalla de inicio»</span>.</p>
         <p>3. Confirma. LangBox se abrirá como app y seguirá funcionando sin internet.</p>
-      </div>
-
-      <!-- Fuera de iOS la instalación también es un único clic, solo que en el
-           menú del navegador en lugar de en un diálogo. -->
-      <div v-if="showBrowserMenuHelp && needsBrowserMenu"
-        class="mt-3 bg-zinc-900 border border-zinc-800 rounded-xl p-4 text-xs text-zinc-400 space-y-1.5">
-        <p class="text-slate-300 font-medium text-sm">Instalar desde el navegador</p>
-        <p>Pulsa el menú de tu navegador (el de los tres puntos, arriba a la derecha) y elige
-          <span class="text-slate-300">«Instalar aplicación»</span>.</p>
       </div>
     </div>
 

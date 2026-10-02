@@ -104,18 +104,11 @@ export function useInstallPrompt() {
   const canPrompt = computed(() => deferredPrompt.value !== null)
 
   // `canPrompt` es falso en iOS aunque la app se pueda instalar a mano: allí se
-  // muestran instrucciones en lugar de un botón que no haría nada.
+  // muestran instrucciones en lugar de un botón que no haría nada. Fuera de iOS
+  // no hay vía manual que ofrecer, así que sin diálogo nativo no se muestra
+  // botón: el navegador es el único que puede abrir ese diálogo.
   const needsManualInstall = computed(
     () => !isInstalled.value && !canPrompt.value && isIOS.value
-  )
-
-  // Chromium recuerda que esta app se instaló alguna vez y deja de emitir
-  // `beforeinstallprompt` aunque el usuario la haya desinstalado. El evento se
-  // puede dar por perdido para siempre, así que el botón se mantiene visible y
-  // cae en el menú del propio navegador ("⋮ -> Instalar aplicación"), que sigue
-  // funcionando y además es un único clic.
-  const needsBrowserMenu = computed(
-    () => !isInstalled.value && !canPrompt.value && !isIOS.value
   )
 
   /**
@@ -130,8 +123,8 @@ export function useInstallPrompt() {
     const choice = await deferredPrompt.value.userChoice
 
     // El evento solo se emite una vez: si el usuario lo descarta se limpia, para
-    // no reabrir un diálogo que el navegador ya da por cerrado. El botón no
-    // desaparece por ello, pasa a la vía manual.
+    // no reabrir un diálogo que el navegador ya da por cerrado. En iOS el botón
+    // sobrevive como manual; en el resto, desaparecer hasta la próxima visita.
     deferredPrompt.value = null
     if (choice.outcome === 'accepted') isInstalled.value = true
 
@@ -143,7 +136,6 @@ export function useInstallPrompt() {
     isIOS,
     canPrompt,
     needsManualInstall,
-    needsBrowserMenu,
     promptInstall
   }
 }
