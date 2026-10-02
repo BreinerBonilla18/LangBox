@@ -21,6 +21,17 @@ export async function saveWordToVault(wordPayload) {
 }
 
 /**
+ * @function getWordFromVault
+ * @description Recupera una palabra concreta del vault local por su identificador.
+ * Se usa para conservar el progreso SRS al volver a guardar una palabra existente.
+ * @param {string} id - Identificador único de la palabra
+ * @returns {Promise<object|undefined>} La palabra almacenada o undefined si no existe
+ */
+export async function getWordFromVault(id) {
+  return await db.words.get(id)
+}
+
+/**
  * @function getWordsForReviewToday
  * @description Filtra la base de datos local para adquirir todas las palabras/tarjetas activas que 
  * necesiten ser repasadas hoy o que estén atrasadas en su revisión.

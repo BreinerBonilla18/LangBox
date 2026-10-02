@@ -1,7 +1,7 @@
 <script setup>
 import { enrichWordWithGemini } from "../core/api/aiService"
-import { saveWordToVault } from '../core/api/wordStorage'
-import { syncWordToCloud } from '../core/api/syncService'
+import { saveWordToVault, getWordFromVault } from '../core/api/wordStorage'
+import { syncNewWordToCloud } from '../core/api/syncService'
 import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Volume2 } from '@lucide/vue'
@@ -53,23 +53,38 @@ const handleSpeak = (text) => {
 const handleSave = async () => {
   if (!wordData.value) return
 
-  const today = new Date().toISOString().slice(0, 10)
+  const wordId = props.word.toLowerCase().trim()
   const rawData = JSON.parse(JSON.stringify(wordData.value))
+
+  // Si la palabra ya existe en el vault, se conserva su progreso SRS:
+  // volver a guardarla no debe reiniciar el historial de repaso.
+  const existing = await getWordFromVault(wordId)
+  const srs = existing
+    ? {
+        r: existing.r ?? 0,
+        ef: existing.ef ?? 2.5,
+        i: existing.i ?? 1,
+        nrd: existing.nrd ?? new Date().toISOString().slice(0, 10)
+      }
+    : {
+        r: 0,              // repeticiones
+        ef: 2.5,           // factor de facilidad
+        i: 1,              // intervalo (días)
+        nrd: new Date().toISOString().slice(0, 10) // fecha de próxima revisión
+      }
+
   const wordPayload = {
-    id: props.word.toLowerCase().trim(),
+    id: wordId,
     word: rawData.word || props.word,
     phonetic: rawData.phonetic || '',
     meanings: rawData.meanings || [],
     mnemonics: rawData.mnemonics || [],
     synonyms: rawData.synonyms || [],
-    r: 0,              // repeticiones
-    ef: 2.5,           // factor de facilidad
-    i: 1,              // intervalo (días)
-    nrd: today         // fecha de próxima revisión
+    ...srs
   }
   try {
     await saveWordToVault(wordPayload)
-    syncWordToCloud(wordPayload).catch(console.error)
+    syncNewWordToCloud(wordPayload).catch(console.error)
     router.push('/vocabulary')
   } catch {
     errorMessage.value = 'No se pudo guardar la palabra en la base de datos local.'

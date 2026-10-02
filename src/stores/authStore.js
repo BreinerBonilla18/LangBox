@@ -24,10 +24,16 @@ export const useAuthStore = defineStore('auth', () => {
     session.value = data.session
     user.value = data.session?.user || null
 
-    // Sincronizar solo la primera vez que carga si hay usuario
+    // Sincronizar solo la primera vez que carga si hay usuario.
+    // Se espera a que termine para montar la app: así la nube ya descargó su
+    // estado autoritativo y ninguna vista opera sobre un SRS local desactualizado.
     if (user.value && !isWordsSynced.value) {
       isWordsSynced.value = true
-      syncLocalWordsToCloudOnLogin(user.value.id).catch(console.error)
+      try {
+        await syncLocalWordsToCloudOnLogin(user.value.id)
+      } catch (error) {
+        console.error('Error en la sincronización inicial de palabras:', error)
+      }
     }
     // Escuchar cambios de autenticación
     supabase.auth.onAuthStateChange(async (event, newSession) => {
@@ -43,7 +49,7 @@ export const useAuthStore = defineStore('auth', () => {
       // Si se dispara SIGNED_IN pero ya sincronizamos este usuario en esta sesión, lo ignoramos
       if (event === 'SIGNED_IN' && !isWordsSynced.value) {
         isWordsSynced.value = true
-        // Ejecuta la fusión de datos local -> nube -> local
+        // Ejecuta la fusión nube -> local (y sólo de subida las palabras nuevas)
         await syncLocalWordsToCloudOnLogin(newUser.id).catch(console.error)
       }
     })

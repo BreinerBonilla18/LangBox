@@ -1,9 +1,9 @@
 <script setup>
+import { Volume2, BookOpen, Sparkles, Brain, CheckCircle2, RotateCcw, Frown, Smile, AlertTriangle, ChevronLeft } from '@lucide/vue'
+import { getWordsForReviewToday, saveWordToVault, getAllVaultWords, deleteWordFromVault } from '../core/api/wordStorage'
+import { syncWordToCloud, syncDeleteWordFromCloud, waitForPendingSync } from '../core/api/syncService'
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { Volume2, BookOpen, Sparkles, Brain, CheckCircle2, RotateCcw, Frown, Smile, X, AlertTriangle, ChevronLeft } from '@lucide/vue'
-import { getWordsForReviewToday, saveWordToVault, getAllVaultWords, deleteWordFromVault } from '../core/api/wordStorage'
-import { syncWordToCloud, syncDeleteWordFromCloud } from '../core/api/syncService'
 
 const router = useRouter()
 const isLoading = ref(true)
@@ -53,6 +53,11 @@ const advanceToNext = () => {
 const handleRate = async (q) => {
   const word = currentWord.value
   if (!word) return
+
+  // Si la sincronización inicial sigue descargando la nube, se espera: de lo
+  // contrario esta revisión se calcularía sobre un SRS local desactualizado y
+  // podría pisar el progreso que viene de otro dispositivo.
+  await waitForPendingSync()
 
   let { r = 0, ef = 2.5, i = 1 } = word
 
