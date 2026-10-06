@@ -1,5 +1,5 @@
 <script setup>
-import { Volume2, LoaderCircle, BookOpen, Sparkles, Brain, CheckCircle2, RotateCcw, Frown, Smile, AlertTriangle, ChevronLeft } from '@lucide/vue'
+import { Volume2, LoaderCircle, BookOpen, Sparkles, CheckCircle2, RotateCcw, Frown, Smile, AlertTriangle, ChevronLeft } from '@lucide/vue'
 import { getWordsForReviewToday, saveWordToVault, getAllVaultWords, deleteWordFromVault } from '../core/api/wordStorage'
 import { syncWordToCloud, syncDeleteWordFromCloud, waitForPendingSync } from '../core/api/syncService'
 import { useSpeech } from '../composables/useSpeech'
@@ -211,9 +211,17 @@ onMounted(() => {
 
       <!-- Flashcard -->
       <div v-else-if="currentWord" class="space-y-6">
-        <!-- Tarjeta frontal -->
-        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 sm:p-12 text-center shadow-lg relative min-h-[16rem] flex flex-col justify-center items-center group transition-all">
-          <button @click="speak(currentWord.word, cardSpeechKey)" :disabled="isSpeechDisabled"
+        <!-- Tarjeta frontal: clickeable para revelar la respuesta -->
+        <div
+          class="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 sm:p-12 text-center shadow-lg relative min-h-[16rem] flex flex-col justify-center items-center group transition-all"
+          :class="!showAnswer && 'cursor-pointer hover:border-indigo-500/50 hover:bg-zinc-800/60 hover:shadow-xl hover:shadow-indigo-500/10'"
+          :role="showAnswer ? undefined : 'button'"
+          :tabindex="showAnswer ? -1 : 0"
+          @click="revealAnswer"
+          @keydown.enter.prevent="revealAnswer"
+          @keydown.space.prevent="revealAnswer"
+        >
+          <button @click.stop="speak(currentWord.word, cardSpeechKey)" :disabled="isSpeechDisabled"
             :title="speechLabelFor(cardSpeechKey) || 'Pronunciar'" :aria-label="speechLabelFor(cardSpeechKey) || 'Pronunciar'"
             class="absolute top-4 right-4 p-2 text-zinc-500 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-xl transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent">
             <LoaderCircle v-if="isLoadingFor(cardSpeechKey)" class="w-6 h-6 animate-spin" />
@@ -224,14 +232,10 @@ onMounted(() => {
               {{ currentWord.phonetic }}
             </span>
             <h2 class="text-4xl sm:text-5xl font-bold text-slate-50 capitalize">{{ currentWord.word }}</h2>
+            <p v-if="!showAnswer" class="text-zinc-500 text-xs sm:text-sm tracking-wide pt-2">
+              Toca la tarjeta para ver la respuesta
+            </p>
           </div>
-        </div>
-
-        <!-- Botón mostrar respuesta -->
-        <div v-if="!showAnswer" class="pt-4">
-          <button @click="revealAnswer" class="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-medium px-6 py-4 rounded-xl transition-colors shadow-lg shadow-indigo-500/20 text-lg cursor-pointer">
-            Mostrar respuesta
-          </button>
         </div>
 
         <!-- Tarjeta trasera (Respuesta) -->
@@ -261,18 +265,6 @@ onMounted(() => {
                     <p class="text-zinc-500 text-xs sm:text-sm">{{ meaning.example_es }}</p>
                   </div>
                 </div>
-              </div>
-
-              <!-- Mnemotecnia -->
-              <div v-if="currentWord.mnemonics?.length" class="bg-zinc-950/60 border border-zinc-800 border-l-4 border-l-emerald-500 rounded-r-xl p-4 sm:p-5 space-y-3">
-                <h3 class="text-xs font-semibold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
-                  <Brain class="w-4 h-4" /> Mnemotecnia
-                </h3>
-                <ul class="space-y-2 list-disc list-inside text-slate-300 text-sm leading-relaxed">
-                  <li v-for="(m, i) in currentWord.mnemonics" :key="i">
-                    {{ m }}
-                  </li>
-                </ul>
               </div>
           </div>
 
