@@ -1,11 +1,13 @@
 <script setup>
-import { Volume2, BookOpen, Sparkles, Brain, CheckCircle2, RotateCcw, Frown, Smile, AlertTriangle, ChevronLeft } from '@lucide/vue'
+import { Volume2, LoaderCircle, BookOpen, Sparkles, Brain, CheckCircle2, RotateCcw, Frown, Smile, AlertTriangle, ChevronLeft } from '@lucide/vue'
 import { getWordsForReviewToday, saveWordToVault, getAllVaultWords, deleteWordFromVault } from '../core/api/wordStorage'
 import { syncWordToCloud, syncDeleteWordFromCloud, waitForPendingSync } from '../core/api/syncService'
+import { useSpeech } from '../composables/useSpeech'
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
+const { speak, isLoading: isSpeechLoading, isSpeaking, isDisabled: isSpeechDisabled, speechLabel } = useSpeech()
 const isLoading = ref(true)
 const reviewQueue = ref([])
 const currentIndex = ref(0)
@@ -24,15 +26,6 @@ const currentWord = computed(() => {
   if (reviewQueue.value.length === 0 || currentIndex.value >= reviewQueue.value.length) return null
   return reviewQueue.value[currentIndex.value]
 })
-
-// Función para pronunciar la palabra
-const handleSpeak = (text) => {
-  if ('speechSynthesis' in window) {
-    const utterance = new SpeechSynthesisUtterance(text)
-    utterance.lang = 'en-US'
-    window.speechSynthesis.speak(utterance)
-  }
-}
 
 // Función para revelar la respuesta
 const revealAnswer = () => {
@@ -214,8 +207,11 @@ onMounted(() => {
       <div v-else-if="currentWord" class="space-y-6">
         <!-- Tarjeta frontal -->
         <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 sm:p-12 text-center shadow-lg relative min-h-[16rem] flex flex-col justify-center items-center group transition-all">
-          <button @click="handleSpeak(currentWord.word)" class="absolute top-4 right-4 p-2 text-zinc-500 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-xl transition-colors cursor-pointer" title="Pronunciar">
-            <Volume2 class="w-6 h-6" />
+          <button @click="speak(currentWord.word)" :disabled="isSpeechDisabled"
+            :title="speechLabel || 'Pronunciar'" :aria-label="speechLabel || 'Pronunciar'"
+            class="absolute top-4 right-4 p-2 text-zinc-500 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-xl transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent">
+            <LoaderCircle v-if="isSpeechLoading" class="w-6 h-6 animate-spin" />
+            <Volume2 v-else class="w-6 h-6" :class="isSpeaking && 'text-indigo-400 animate-pulse'" />
           </button>
           <div class="space-y-4 w-full">
             <span v-if="currentWord.phonetic" class="text-indigo-400/90 font-mono tracking-widest text-sm inline-block px-3 py-1 bg-indigo-500/10 rounded-full border border-indigo-500/20">
@@ -250,8 +246,11 @@ onMounted(() => {
                   </p>
                   <div class="bg-zinc-900/50 p-3 sm:p-4 rounded-lg border border-zinc-800/60 space-y-1.5 relative group">
                     <p class="text-slate-100 text-sm leading-relaxed italic pr-8">"{{ meaning.example_en }}"</p>
-                    <button @click.stop="handleSpeak(meaning.example_en)" class="absolute top-2 right-2 p-1.5 text-zinc-500 shrink-0 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-all cursor-pointer" title="Pronunciar ejemplo">
-                      <Volume2 class="w-4 h-4" />
+                    <button @click.stop="speak(meaning.example_en)" :disabled="isSpeechDisabled"
+                      :title="speechLabel || 'Pronunciar ejemplo'" :aria-label="speechLabel || 'Pronunciar ejemplo'"
+                      class="absolute top-2 right-2 p-1.5 text-zinc-500 shrink-0 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent">
+                      <LoaderCircle v-if="isSpeechLoading" class="w-4 h-4 animate-spin" />
+                      <Volume2 v-else class="w-4 h-4" :class="isSpeaking && 'text-indigo-400 animate-pulse'" />
                     </button>
                     <p class="text-zinc-500 text-xs sm:text-sm">{{ meaning.example_es }}</p>
                   </div>

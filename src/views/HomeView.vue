@@ -3,10 +3,15 @@ import { Search, Book, Brain, LogOut, Download, Share } from '@lucide/vue'
 import { useAuthStore } from '../stores/authStore'
 import { useNetworkStore } from '../stores/networkStore'
 import { useInstallPrompt } from '../composables/useInstallPrompt'
+import {
+  MAX_QUERY_LENGTH,
+  SEARCH_ERROR_MESSAGES,
+  validateSearchQuery
+} from '../core/utils/searchValidation'
 import langboxLogo from '../assets/langbox.svg'
 import googleIcon from '../assets/google.svg'
 import { useRouter } from 'vue-router'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 
 const authStore = useAuthStore()
 const networkStore = useNetworkStore()
@@ -15,6 +20,15 @@ const router = useRouter()
 
 const searchQuery = ref('')
 const showIosHelp = ref(false)
+
+// Motivo por el que la última consulta fue rechazada, o `null` si es válida.
+// Se guarda la clave del motivo, no el texto, para poder traducirlo desde el
+// mapa del validador sin duplicar los textos en la plantilla.
+const searchError = ref(null)
+
+const searchErrorMessage = computed(() =>
+  searchError.value ? SEARCH_ERROR_MESSAGES[searchError.value] : ''
+)
 
 // El buscador consulta la IA de Gemini, así que es la única función que
 // depende de internet. Sin conexión se desactiva en lugar de fallar.
@@ -40,17 +54,33 @@ const syncDotClass = computed(() => {
 
 // Llevar al usuario a la página de búsqueda cuando se realiza una búsqueda
 const handleSearch = () => {
-  const query = searchQuery.value.trim()
-  if (!query) return
-
   // Guarda de seguridad: aunque el input esté deshabilitado, la tecla `Enter` o
   // un envío del formulario no deberían lanzar una consulta que va a fallar.
   if (searchDisabled.value) return
 
-  const capitalizedQuery = query.charAt(0).toUpperCase() + query.slice(1).toLowerCase()
+  // Cada consulta dispara una llamada a la IA, así que se descarta antes lo que
+  // no puede devolver un resultado útil: oraciones largas, símbolos, emojis o
+  // textos en otro idioma. Las expresiones y los idioms sí se permiten, por eso
+  // el validador admite varias palabras en lugar de exigir una sola.
+  const { valid, value, reason } = validateSearchQuery(searchQuery.value)
+
+  if (!valid) {
+    searchError.value = reason
+    return
+  }
+
+  searchError.value = null
+
+  const capitalizedQuery = value.charAt(0).toUpperCase() + value.slice(1).toLowerCase()
 
   router.push({ name: 'search', params: { word: capitalizedQuery } })
 }
+
+// El aviso de error pertenece a la consulta que lo originó: en cuanto se edita,
+// sigue siendo incorrecta y no hay motivo para alarmar otra vez.
+watch(searchQuery, () => {
+  searchError.value = null
+})
 
 const goToVocabulary = () => router.push('/vocabulary')
 const goToFlashcards = () => router.push('/flashcards')
@@ -173,7 +203,10 @@ const cards = [
 
         <input v-model="searchQuery" @keyup.enter="handleSearch" type="text"
           :placeholder="searchPlaceholder" :disabled="searchDisabled"
-          class="w-full py-3 sm:py-4 pl-10 sm:pl-12 pr-3 sm:pr-4 bg-zinc-900 border border-zinc-800 rounded-xl text-sm sm:text-base text-slate-50 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all placeholder:text-zinc-500 disabled:opacity-50 disabled:cursor-not-allowed" />
+          :maxlength="MAX_QUERY_LENGTH" :aria-invalid="!!searchError"
+          :aria-describedby="searchError ? 'search-error' : undefined"
+          class="w-full py-3 sm:py-4 pl-10 sm:pl-12 pr-3 sm:pr-4 bg-zinc-900 border rounded-xl text-sm sm:text-base text-slate-50 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all placeholder:text-zinc-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          :class="searchError ? 'border-rose-500/60 focus:border-rose-500 focus:ring-rose-500/20' : 'border-zinc-800'" />
 
         <button @click="handleSearch" :disabled="searchDisabled"
           class="bg-indigo-500 text-white px-3 sm:px-4 py-2 rounded-xl cursor-pointer hover:bg-indigo-600 transition-colors shadow-lg shadow-indigo-500/20 text-sm sm:text-base whitespace-nowrap disabled:bg-zinc-800 disabled:text-zinc-500 disabled:shadow-none disabled:cursor-not-allowed disabled:hover:bg-zinc-800">
@@ -184,6 +217,12 @@ const cards = [
       <!-- Aviso explícito de por qué el buscador no responde -->
       <p v-if="searchDisabled" class="mt-2 text-xs text-amber-400/90 text-center sm:text-left">
         El buscador usa IA en la nube, así que necesita conexión. Tu vocabulario y tus tarjetas funcionan sin internet.
+      </p>
+
+      <!-- Motivo por el que la consulta se ha descartado sin gastar una llamada -->
+      <p v-else-if="searchError" id="search-error" role="alert"
+        class="mt-2 text-xs text-rose-400/90 text-center sm:text-left">
+        {{ searchErrorMessage }}
       </p>
     </div>
 

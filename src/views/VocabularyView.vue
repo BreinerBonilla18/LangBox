@@ -1,11 +1,13 @@
 <script setup>
-import { Trash2, ChevronDown, ChevronUp, BookOpen, Search, ChevronLeft, ChevronRight, Volume2, AlertTriangle } from '@lucide/vue'
+import { Trash2, ChevronDown, ChevronUp, BookOpen, Search, ChevronLeft, ChevronRight, Volume2, LoaderCircle, AlertTriangle } from '@lucide/vue'
 import { getAllVaultWords, deleteWordFromVault } from '../core/api/wordStorage'
 import { syncDeleteWordFromCloud } from '../core/api/syncService'
+import { useSpeech } from '../composables/useSpeech'
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
+const { speak, isLoading: isSpeechLoading, isSpeaking, isDisabled: isSpeechDisabled, speechLabel } = useSpeech()
 
 const expandedWords = ref(new Set())
 const isLoading = ref(true)
@@ -53,15 +55,6 @@ const handleGoToFlashcards = () => router.push('/flashcards')
 
 // Función para volver al inicio
 const handleGoBack = () => router.push('/')
-
-// Función para pronunciar la palabra
-const handleSpeak = (text) => {
-  if ('speechSynthesis' in window) {
-    const utterance = new SpeechSynthesisUtterance(text)
-    utterance.lang = 'en-US'
-    window.speechSynthesis.speak(utterance)
-  }
-}
 
 // Función para alternar la expansión de una palabra
 const handleToggleExpand = (wordId) => {
@@ -195,8 +188,11 @@ onMounted(() => {
               <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 truncate">
                 <div class="flex items-center gap-2">
                   <h2 class="text-lg sm:text-xl font-semibold text-slate-50 capitalize truncate">{{ word.word }}</h2>
-                  <button @click.stop="handleSpeak(word.word)" class="p-1.5 text-zinc-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-colors cursor-pointer" title="Pronunciar">
-                    <Volume2 class="w-4 h-4 sm:w-5 sm:h-5" />
+                  <button @click.stop="speak(word.word)" :disabled="isSpeechDisabled"
+                    :title="speechLabel || 'Pronunciar'" :aria-label="speechLabel || 'Pronunciar'"
+                    class="p-1.5 text-zinc-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent">
+                    <LoaderCircle v-if="isSpeechLoading" class="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
+                    <Volume2 v-else class="w-4 h-4 sm:w-5 sm:h-5" :class="isSpeaking && 'text-indigo-400 animate-pulse'" />
                   </button>
                 </div>
                 <span v-if="word.phonetic"
@@ -236,8 +232,11 @@ onMounted(() => {
                 <div class="bg-zinc-900/50 p-2.5 sm:p-3 rounded-md border border-zinc-800/60 space-y-1">
                   <div class="flex items-start justify-between gap-3">
                     <p class="text-slate-100 text-xs sm:text-sm leading-relaxed">"{{ meaning.example_en }}"</p>
-                    <button @click.stop="handleSpeak(meaning.example_en)" class="shrink-0 p-1.5 text-zinc-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-colors cursor-pointer" title="Pronunciar ejemplo">
-                      <Volume2 class="w-4 h-4" />
+                    <button @click.stop="speak(meaning.example_en)" :disabled="isSpeechDisabled"
+                      :title="speechLabel || 'Pronunciar ejemplo'" :aria-label="speechLabel || 'Pronunciar ejemplo'"
+                      class="shrink-0 p-1.5 text-zinc-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent">
+                      <LoaderCircle v-if="isSpeechLoading" class="w-4 h-4 animate-spin" />
+                      <Volume2 v-else class="w-4 h-4" :class="isSpeaking && 'text-indigo-400 animate-pulse'" />
                     </button>
                   </div>
                   <p class="text-zinc-400 text-[10px] sm:text-xs italic">{{ meaning.example_es }}</p>

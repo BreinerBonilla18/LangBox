@@ -2,13 +2,15 @@
 import { enrichWordWithGemini } from "../core/api/aiService"
 import { saveWordToVault, getWordFromVault } from '../core/api/wordStorage'
 import { syncNewWordToCloud } from '../core/api/syncService'
+import { useSpeech } from '../composables/useSpeech'
 import { useNetworkStore } from '../stores/networkStore'
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Volume2, WifiOff } from '@lucide/vue'
+import { Volume2, LoaderCircle, WifiOff, Info } from '@lucide/vue'
 
 const router = useRouter()
 const networkStore = useNetworkStore()
+const { speak, isLoading: isSpeechLoading, isSpeaking, isDisabled: isSpeechDisabled, speechLabel } = useSpeech()
 
 // Definir props
 const props = defineProps({
@@ -26,9 +28,9 @@ const isFromCache = ref(false)
 
 const wordData = ref(null)
 
-// El buscador es la única función que depende de la nube: sin conexión no se
-// consulta la IA, y en su lugar se ofrece la copia local si la palabra ya fue
-// guardada antes. Nunca se lanza una petición que solo puede fallar.
+// La búsqueda va primero a la copia local y solo consulta a la IA si la palabra
+// no está en el vocabulario. Así una palabra ya guardada no se vuelve a buscar,
+// y sin conexión sigue funcionando con lo que hay en el dispositivo.
 const fetchWordData = async (wordToSearch) => {
   if (!wordToSearch) return
 
@@ -39,17 +41,22 @@ const fetchWordData = async (wordToSearch) => {
 
   const wordId = wordToSearch.toLowerCase().trim()
 
+  // La copia local se consulta primero siempre, haya red o no. Si la palabra ya
+  // está en el vocabulario no hay nada que averiguar: volver a preguntarle a la
+  // IA gastaría cuota para regenerar unos datos que ya están guardados, y el
+  // resultado podría además no coincidir con lo que el usuario está repasando.
+  const localWord = await getWordFromVault(wordId).catch(() => undefined)
+
+  if (localWord && !localWord.is_deleted) {
+    wordData.value = localWord
+    isFromCache.value = true
+    isLoading.value = false
+    return
+  }
+
   if (!networkStore.isOnline) {
-    const localWord = await getWordFromVault(wordId).catch(() => undefined)
-
-    if (localWord && !localWord.is_deleted) {
-      wordData.value = localWord
-      isFromCache.value = true
-    } else {
-      errorMessage.value =
-        'El buscador necesita conexión a internet y esta palabra todavía no está en tu vocabulario.'
-    }
-
+    errorMessage.value =
+      'El buscador necesita conexión a internet y esta palabra todavía no está en tu vocabulario.'
     isLoading.value = false
     return
   }
@@ -65,17 +72,9 @@ const fetchWordData = async (wordToSearch) => {
   }
 }
 
-// Texto del botón Guardar: sin conexión la palabra entra igual en el vault local.
+// Si lo que se muestra venía del vault local, la palabra ya está guardada y no
+// hay nada que escribir: volver a guardarla solo generaría una subida inútil.
 const saveButtonLabel = computed(() => (isFromCache.value ? 'Guardada' : 'Guardar'))
-
-// Función para pronunciar la palabra
-const handleSpeak = (text) => {
-  if ('speechSynthesis' in window) {
-    const utterance = new SpeechSynthesisUtterance(text)
-    utterance.lang = 'en-US'
-    window.speechSynthesis.speak(utterance)
-  }
-}
 
 // Función para guardar la palabra
 const handleSave = async () => {
@@ -169,11 +168,19 @@ watch(() => networkStore.isOnline, (online) => {
     <!-- Contenido Principal -->
     <div v-else-if="wordData" class="space-y-6">
 
-      <!-- Origen de los datos: sin conexión lo que se ve es la copia local -->
+      <!-- Origen de los datos: lo que se ve nunca es la consulta de IA -->
       <div v-if="isFromCache"
-        class="flex items-start gap-2.5 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-300">
-        <WifiOff class="mt-0.5 h-4 w-4 shrink-0" />
-        <span>Estás sin conexión: se muestra la copia guardada en este dispositivo, no la consulta de IA.</span>
+        class="flex items-start gap-2.5 rounded-xl border px-4 py-3 text-xs"
+        :class="networkStore.isOnline
+          ? 'border-zinc-800 bg-zinc-900 text-zinc-400'
+          : 'border-amber-500/20 bg-amber-500/10 text-amber-300'">
+        <component :is="networkStore.isOnline ? Info : WifiOff" class="mt-0.5 h-4 w-4 shrink-0" />
+        <span v-if="networkStore.isOnline">
+          Esta palabra ya está en tu vocabulario.
+        </span>
+        <span v-else>
+          Estás sin conexión: se muestra la copia guardada en este dispositivo, no la consulta de IA.
+        </span>
       </div>
       
       <!-- Palabra Consultada -->
@@ -184,8 +191,11 @@ watch(() => networkStore.isOnline, (online) => {
             <h1 class="text-3xl sm:text-4xl font-bold text-slate-50 tracking-study capitalize">
               {{ wordData.word }}
             </h1>
-            <button @click.stop="handleSpeak(wordData.word)" class="p-2 text-zinc-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-colors cursor-pointer" title="Pronunciar">
-              <Volume2 class="w-6 h-6" />
+            <button @click.stop="speak(wordData.word)" :disabled="isSpeechDisabled"
+              :title="speechLabel || 'Pronunciar'" :aria-label="speechLabel || 'Pronunciar'"
+              class="p-2 text-zinc-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent">
+              <LoaderCircle v-if="isSpeechLoading" class="w-6 h-6 animate-spin" />
+              <Volume2 v-else class="w-6 h-6" :class="isSpeaking && 'text-indigo-400 animate-pulse'" />
             </button>
           </div>
         </div>
@@ -214,8 +224,11 @@ watch(() => networkStore.isOnline, (online) => {
           <div class="bg-zinc-950/60 p-3 sm:p-4 rounded-lg border border-zinc-800/80 space-y-1">
             <div class="flex items-start justify-between gap-3">
               <p class="text-slate-100 font-medium leading-relaxed text-sm sm:text-base">"{{ meaning.example_en }}"</p>
-              <button @click.stop="handleSpeak(meaning.example_en)" class="shrink-0 p-1.5 text-zinc-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-colors cursor-pointer" title="Pronunciar ejemplo">
-                <Volume2 class="w-4 h-4" />
+              <button @click.stop="speak(meaning.example_en)" :disabled="isSpeechDisabled"
+                :title="speechLabel || 'Pronunciar ejemplo'" :aria-label="speechLabel || 'Pronunciar ejemplo'"
+                class="shrink-0 p-1.5 text-zinc-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent">
+                <LoaderCircle v-if="isSpeechLoading" class="w-4 h-4 animate-spin" />
+                <Volume2 v-else class="w-4 h-4" :class="isSpeaking && 'text-indigo-400 animate-pulse'" />
               </button>
             </div>
             <p class="text-zinc-400 text-xs sm:text-sm italic">{{ meaning.example_es }}</p>
