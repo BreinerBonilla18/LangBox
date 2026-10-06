@@ -12,7 +12,12 @@ import { Volume2, LoaderCircle, WifiOff, Info } from '@lucide/vue'
 const router = useRouter()
 const networkStore = useNetworkStore()
 const authStore = useAuthStore()
-const { speak, isLoading: isSpeechLoading, isSpeaking, isDisabled: isSpeechDisabled, speechLabel } = useSpeech()
+const { speak, isDisabled: isSpeechDisabled, isLoadingFor, isSpeakingFor, speechLabelFor } = useSpeech()
+
+// Claves de los botones de voz: solo el botón que lanzó la lectura pinta
+// loader/pulso; el resto se queda en su aspecto deshabilitado.
+const headSpeechKey = 'head'
+const exampleSpeechKey = (index) => `example-${index}`
 
 // Definir props
 const props = defineProps({
@@ -197,11 +202,11 @@ watch(() => networkStore.isOnline, (online) => {
             <h1 class="text-3xl sm:text-4xl font-bold text-slate-50 tracking-study capitalize">
               {{ wordData.word }}
             </h1>
-            <button @click.stop="speak(wordData.word)" :disabled="isSpeechDisabled"
-              :title="speechLabel || 'Pronunciar'" :aria-label="speechLabel || 'Pronunciar'"
+            <button @click.stop="speak(wordData.word, headSpeechKey)" :disabled="isSpeechDisabled"
+              :title="speechLabelFor(headSpeechKey) || 'Pronunciar'" :aria-label="speechLabelFor(headSpeechKey) || 'Pronunciar'"
               class="p-2 text-zinc-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent">
-              <LoaderCircle v-if="isSpeechLoading" class="w-6 h-6 animate-spin" />
-              <Volume2 v-else class="w-6 h-6" :class="isSpeaking && 'text-indigo-400 animate-pulse'" />
+              <LoaderCircle v-if="isLoadingFor(headSpeechKey)" class="w-6 h-6 animate-spin" />
+              <Volume2 v-else class="w-6 h-6" :class="isSpeakingFor(headSpeechKey) && 'text-indigo-400 animate-pulse'" />
             </button>
           </div>
         </div>
@@ -230,11 +235,11 @@ watch(() => networkStore.isOnline, (online) => {
           <div class="bg-zinc-950/60 p-3 sm:p-4 rounded-lg border border-zinc-800/80 space-y-1">
             <div class="flex items-start justify-between gap-3">
               <p class="text-slate-100 font-medium leading-relaxed text-sm sm:text-base">"{{ meaning.example_en }}"</p>
-              <button @click.stop="speak(meaning.example_en)" :disabled="isSpeechDisabled"
-                :title="speechLabel || 'Pronunciar ejemplo'" :aria-label="speechLabel || 'Pronunciar ejemplo'"
+              <button @click.stop="speak(meaning.example_en, exampleSpeechKey(index))" :disabled="isSpeechDisabled"
+                :title="speechLabelFor(exampleSpeechKey(index)) || 'Pronunciar ejemplo'" :aria-label="speechLabelFor(exampleSpeechKey(index)) || 'Pronunciar ejemplo'"
                 class="shrink-0 p-1.5 text-zinc-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent">
-                <LoaderCircle v-if="isSpeechLoading" class="w-4 h-4 animate-spin" />
-                <Volume2 v-else class="w-4 h-4" :class="isSpeaking && 'text-indigo-400 animate-pulse'" />
+                <LoaderCircle v-if="isLoadingFor(exampleSpeechKey(index))" class="w-4 h-4 animate-spin" />
+                <Volume2 v-else class="w-4 h-4" :class="isSpeakingFor(exampleSpeechKey(index)) && 'text-indigo-400 animate-pulse'" />
               </button>
             </div>
             <p class="text-zinc-400 text-xs sm:text-sm italic">{{ meaning.example_es }}</p>

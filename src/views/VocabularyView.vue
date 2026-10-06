@@ -8,7 +8,13 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
-const { speak, isLoading: isSpeechLoading, isSpeaking, isDisabled: isSpeechDisabled, speechLabel } = useSpeech()
+const { speak, isDisabled: isSpeechDisabled, isLoadingFor, isSpeakingFor, speechLabelFor } = useSpeech()
+
+// Claves de los botones de voz: cada una identifica a un botón concreto para
+// que solo el que lanzó la lectura muestre loader/pulso y el resto quede
+// en su aspecto deshabilitado.
+const wordSpeechKey = (word) => `word-${word.id}`
+const exampleSpeechKey = (word, index) => `word-${word.id}-example-${index}`
 
 const expandedWords = ref(new Set())
 const isLoading = ref(true)
@@ -189,11 +195,11 @@ onMounted(() => {
               <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 truncate">
                 <div class="flex items-center gap-2">
                   <h2 class="text-lg sm:text-xl font-semibold text-slate-50 capitalize truncate">{{ word.word }}</h2>
-                  <button @click.stop="speak(word.word)" :disabled="isSpeechDisabled"
-                    :title="speechLabel || 'Pronunciar'" :aria-label="speechLabel || 'Pronunciar'"
+                  <button @click.stop="speak(word.word, wordSpeechKey(word))" :disabled="isSpeechDisabled"
+                    :title="speechLabelFor(wordSpeechKey(word)) || 'Pronunciar'" :aria-label="speechLabelFor(wordSpeechKey(word)) || 'Pronunciar'"
                     class="p-1.5 text-zinc-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent">
-                    <LoaderCircle v-if="isSpeechLoading" class="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
-                    <Volume2 v-else class="w-4 h-4 sm:w-5 sm:h-5" :class="isSpeaking && 'text-indigo-400 animate-pulse'" />
+                    <LoaderCircle v-if="isLoadingFor(wordSpeechKey(word))" class="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
+                    <Volume2 v-else class="w-4 h-4 sm:w-5 sm:h-5" :class="isSpeakingFor(wordSpeechKey(word)) && 'text-indigo-400 animate-pulse'" />
                   </button>
                 </div>
                 <span v-if="word.phonetic"
@@ -233,11 +239,11 @@ onMounted(() => {
                 <div class="bg-zinc-900/50 p-2.5 sm:p-3 rounded-md border border-zinc-800/60 space-y-1">
                   <div class="flex items-start justify-between gap-3">
                     <p class="text-slate-100 text-xs sm:text-sm leading-relaxed">"{{ meaning.example_en }}"</p>
-                    <button @click.stop="speak(meaning.example_en)" :disabled="isSpeechDisabled"
-                      :title="speechLabel || 'Pronunciar ejemplo'" :aria-label="speechLabel || 'Pronunciar ejemplo'"
+                    <button @click.stop="speak(meaning.example_en, exampleSpeechKey(word, index))" :disabled="isSpeechDisabled"
+                      :title="speechLabelFor(exampleSpeechKey(word, index)) || 'Pronunciar ejemplo'" :aria-label="speechLabelFor(exampleSpeechKey(word, index)) || 'Pronunciar ejemplo'"
                       class="shrink-0 p-1.5 text-zinc-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent">
-                      <LoaderCircle v-if="isSpeechLoading" class="w-4 h-4 animate-spin" />
-                      <Volume2 v-else class="w-4 h-4" :class="isSpeaking && 'text-indigo-400 animate-pulse'" />
+                      <LoaderCircle v-if="isLoadingFor(exampleSpeechKey(word, index))" class="w-4 h-4 animate-spin" />
+                      <Volume2 v-else class="w-4 h-4" :class="isSpeakingFor(exampleSpeechKey(word, index)) && 'text-indigo-400 animate-pulse'" />
                     </button>
                   </div>
                   <p class="text-zinc-400 text-[10px] sm:text-xs italic">{{ meaning.example_es }}</p>

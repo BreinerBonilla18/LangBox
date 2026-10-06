@@ -32,11 +32,21 @@ const isSupported = typeof window !== 'undefined' && 'speechSynthesis' in window
  *    y el botón deshabilitado, que es justo la sensación de "no funciona".
  * 3. **Audio huérfano.** Al navegar a otra vista la lectura anterior seguía
  *    sonando en segundo plano; se cancela al desmontar.
+ * 4. **Estados compartidos en listas.** En un `v-for` con varios botones, el
+ *    estado global pintaba el loader y el pulso en todos a la vez. `speak()`
+ *    acepta una clave que identifica al botón que lanzó la lectura, y las
+ *    variantes `isLoadingFor(key)` / `isSpeakingFor(key)` / `speechLabelFor(key)`
+ *    devuelven el estado solo para ese botón; el resto queda en su aspecto de
+ *    deshabilitado.
  *
- * @returns {{ status: import('vue').Ref<'idle'|'loading'|'speaking'>, isBusy: import('vue').ComputedRef<boolean>, isLoading: import('vue').ComputedRef<boolean>, isSpeaking: import('vue').ComputedRef<boolean>, isSupported: boolean, isDisabled: import('vue').ComputedRef<boolean>, speechLabel: import('vue').ComputedRef<string>, speak: (text: string) => boolean, cancel: () => void }}
+ * @returns {{ status: import('vue').Ref<'idle'|'loading'|'speaking'>, activeKey: import('vue').Ref<string|null>, isBusy: import('vue').ComputedRef<boolean>, isLoading: import('vue').ComputedRef<boolean>, isSpeaking: import('vue').ComputedRef<boolean>, isSupported: boolean, isDisabled: import('vue').ComputedRef<boolean>, speechLabel: import('vue').ComputedRef<string>, isLoadingFor: (key: string) => boolean, isSpeakingFor: (key: string) => boolean, speechLabelFor: (key: string) => string, speak: (text: string, key?: string) => boolean, cancel: () => void }}
  */
 export function useSpeech() {
   const status = ref('idle')
+
+  // Clave del botón/elemento que lanzó la lectura en curso. Permite que cada
+  // botón de un `v-for` pregunte "¿soy yo el que está activo?".
+  const activeKey = ref(null)
 
   // Referencia viva al utterance en curso. Chrome lo recoge si nada lo mantiene
   // referenciado y la lectura se corta a mitad.
@@ -59,6 +69,27 @@ export function useSpeech() {
     return ''
   })
 
+  /** `true` solo si la carga en curso fue lanzada por la clave indicada. */
+  function isLoadingFor(key) {
+    return status.value === 'loading' && activeKey.value === key
+  }
+
+  /** `true` solo si la lectura en curso fue lanzada por la clave indicada. */
+  function isSpeakingFor(key) {
+    return status.value === 'speaking' && activeKey.value === key
+  }
+
+  /**
+   * Etiqueta para el tooltip/aria de un botón concreto: la del estado activo si
+   * es el que está leyendo, o vacía si no, para que el resto muestre su texto
+   * por defecto en lugar de "Preparando la lectura...".
+   */
+  function speechLabelFor(key) {
+    if (!isSupported) return 'Este navegador no admite lectura en voz alta'
+    if (activeKey.value !== key) return ''
+    return speechLabel.value
+  }
+
   function clearTimers() {
     if (startupTimer) clearTimeout(startupTimer)
     if (watchdogTimer) clearTimeout(watchdogTimer)
@@ -70,6 +101,7 @@ export function useSpeech() {
   function finish() {
     clearTimers()
     activeUtterance = null
+    activeKey.value = null
     status.value = 'idle'
   }
 
@@ -77,10 +109,14 @@ export function useSpeech() {
    * @function speak
    * @description Lanza la lectura en voz alta de un texto.
    * @param {string} text - Texto a leer.
+   * @param {string} [key] - Clave que identifica al botón que lanza la lectura
+   * (p. ej. `word-${id}-example-${index}`). Si se omite se usa el propio texto.
+   * Con ella, `isLoadingFor`/`isSpeakingFor`/`speechLabelFor` saben qué botón
+   * debe pintar el estado y cuáles quedarse en su aspecto deshabilitado.
    * @returns {boolean} `false` si no se aceptó la petición, ya sea porque el
    * navegador no lo soporta, el texto está vacío o había una lectura en curso.
    */
-  function speak(text) {
+  function speak(text, key) {
     if (!isSupported) return false
     if (typeof text !== 'string' || !text.trim()) return false
 
@@ -95,6 +131,7 @@ export function useSpeech() {
     // versiones de iOS un `cancel()` en vacío se traga el `speak()` siguiente.
     if (synth.speaking || synth.pending) synth.cancel()
 
+    activeKey.value = key ?? text
     status.value = 'loading'
 
     const utterance = new SpeechSynthesisUtterance(text)
@@ -150,12 +187,16 @@ export function useSpeech() {
 
   return {
     status,
+    activeKey,
     isBusy,
     isLoading,
     isSpeaking,
     isSupported,
     isDisabled,
     speechLabel,
+    isLoadingFor,
+    isSpeakingFor,
+    speechLabelFor,
     speak,
     cancel
   }
