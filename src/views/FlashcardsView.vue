@@ -3,6 +3,7 @@ import { Volume2, LoaderCircle, BookOpen, Sparkles, Brain, CheckCircle2, RotateC
 import { getWordsForReviewToday, saveWordToVault, getAllVaultWords, deleteWordFromVault } from '../core/api/wordStorage'
 import { syncWordToCloud, syncDeleteWordFromCloud, waitForPendingSync } from '../core/api/syncService'
 import { useSpeech } from '../composables/useSpeech'
+import BaseModal from '../components/BaseModal.vue'
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -299,27 +300,38 @@ onMounted(() => {
     </div>
 
     <!-- Modal de Maestría de Palabra -->
-    <div v-if="showMasteryModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="handleKeepWord"></div>
-      <div class="bg-zinc-900 border border-zinc-700/50 rounded-2xl p-6 sm:p-8 w-full max-w-sm relative z-10 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-        <div class="flex flex-col items-center text-center space-y-4">
-          <div class="w-16 h-16 bg-amber-500/10 rounded-full flex items-center justify-center border border-amber-500/20">
-            <AlertTriangle class="w-8 h-8 text-amber-500" />
-          </div>
-          <h2 class="text-xl font-bold text-slate-50">¡Palabra Dominada!</h2>
-          <p class="text-zinc-400 text-sm">
-            Has repasado <span class="text-slate-200 font-semibold uppercase">"{{ wordToDecide?.word }}"</span> 5 veces exitosamente. ¿Qué deseas hacer con esta palabra?
-          </p>
-          <div class="flex flex-col gap-3 w-full pt-4">
-            <button @click="handleKeepWord" class="w-full bg-zinc-800 hover:bg-zinc-700 text-slate-300 font-medium px-4 py-3 rounded-xl transition-colors text-sm cursor-pointer border border-zinc-700/50">
-              Conservar en mi lista
-            </button>
-            <button @click="handleDeleteWord" class="w-full bg-red-500 hover:bg-red-600 text-white font-medium px-4 py-3 rounded-xl transition-colors shadow-lg shadow-red-500/20 text-sm cursor-pointer">
-              Eliminar palabra
-            </button>
-          </div>
+    <BaseModal
+      v-if="showMasteryModal"
+      title="¡Palabra Dominada!"
+      tone="amber"
+      @close="handleKeepWord"
+    >
+      <template #icon>
+        <AlertTriangle class="w-8 h-8 text-amber-500" />
+      </template>
+
+      <p>
+        Has repasado
+        <span class="text-slate-200 font-semibold uppercase">"{{ wordToDecide?.word }}"</span> 5
+        veces exitosamente. ¿Qué deseas hacer con esta palabra?
+      </p>
+
+      <template #actions>
+        <div class="flex flex-col gap-3 w-full">
+          <button
+            @click="handleKeepWord"
+            class="w-full bg-zinc-800 hover:bg-zinc-700 text-slate-300 font-medium px-4 py-3 rounded-xl transition-colors text-sm cursor-pointer border border-zinc-700/50"
+          >
+            Conservar en mi lista
+          </button>
+          <button
+            @click="handleDeleteWord"
+            class="w-full bg-red-500 hover:bg-red-600 text-white font-medium px-4 py-3 rounded-xl transition-colors shadow-lg shadow-red-500/20 text-sm cursor-pointer"
+          >
+            Eliminar palabra
+          </button>
         </div>
-      </div>
-    </div>
+      </template>
+    </BaseModal>
   </div>
 </template>

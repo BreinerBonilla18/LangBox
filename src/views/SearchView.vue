@@ -4,12 +4,14 @@ import { saveWordToVault, getWordFromVault } from '../core/api/wordStorage'
 import { syncNewWordToCloud } from '../core/api/syncService'
 import { useSpeech } from '../composables/useSpeech'
 import { useNetworkStore } from '../stores/networkStore'
+import { useAuthStore } from '../stores/authStore'
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Volume2, LoaderCircle, WifiOff, Info } from '@lucide/vue'
 
 const router = useRouter()
 const networkStore = useNetworkStore()
+const authStore = useAuthStore()
 const { speak, isLoading: isSpeechLoading, isSpeaking, isDisabled: isSpeechDisabled, speechLabel } = useSpeech()
 
 // Definir props
@@ -114,6 +116,10 @@ const handleSave = async () => {
     meanings: rawData.meanings || [],
     mnemonics: rawData.mnemonics || [],
     synonyms: rawData.synonyms || [],
+    // Se vincula a la cuenta activa en el momento de guardar. Si no hay
+    // sesión, se conserva el vínculo previo para no desvincular una palabra
+    // que ya pertenece a una cuenta.
+    user_id: authStore.user?.id ?? existing?.user_id ?? null,
     ...srs
   }
   try {

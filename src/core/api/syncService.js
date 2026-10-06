@@ -27,13 +27,13 @@ const SRS_COLUMNS = ['r', 'ef', 'i', 'nrd']
 const DEFAULT_SRS = { r: 0, ef: 2.5, i: 1 }
 
 // Tipos de operación que pueden quedar encoladas mientras no hay conexión.
-const OP_UPSERT = 'upsert'
-const OP_DELETE = 'delete'
+export const OP_UPSERT = 'upsert'
+export const OP_DELETE = 'delete'
 
 // Modo de un 'upsert' pendiente. Importa porque define si al vaciar la cola se
 // respeta el SRS remoto: la nube siempre es la fuente de verdad del SRS, salvo
 // que la operación nace de una revisión real hecha en ESTE dispositivo.
-const MODE_CONTENT = 'content' // Guarda el contenido sin pisar el SRS de la nube.
+export const MODE_CONTENT = 'content' // Guarda el contenido sin pisar el SRS de la nube.
 const MODE_SRS = 'srs' // Revisión real: el SRS local es lo que debe subir.
 
 // Promesa de la sincronización de inicio en curso, para que ninguna escritura
@@ -286,7 +286,7 @@ export async function waitForPendingSync() {
  * @param {string} mode - MODE_CONTENT o MODE_SRS (solo para OP_UPSERT)
  * @returns {Promise<void>}
  */
-async function enqueuePendingOp(type, wordId, payload, mode) {
+export async function enqueuePendingOp(type, wordId, payload, mode) {
   try {
     await db.pendingOps.put({
       word_id: wordId,

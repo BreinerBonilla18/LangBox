@@ -3,6 +3,7 @@ import { Trash2, ChevronDown, ChevronUp, BookOpen, Search, ChevronLeft, ChevronR
 import { getAllVaultWords, deleteWordFromVault } from '../core/api/wordStorage'
 import { syncDeleteWordFromCloud } from '../core/api/syncService'
 import { useSpeech } from '../composables/useSpeech'
+import BaseModal from '../components/BaseModal.vue'
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -281,27 +282,38 @@ onMounted(() => {
     </div>
 
     <!-- Modal de Confirmación -->
-    <div v-if="isDeleteDialogOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="cancelDelete"></div>
-      <div class="bg-zinc-900 border border-zinc-700/50 rounded-2xl p-6 sm:p-8 w-full max-w-sm relative z-10 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-        <div class="flex flex-col items-center text-center space-y-4">
-          <div class="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center border border-red-500/20">
-            <AlertTriangle class="w-8 h-8 text-red-500" />
-          </div>
-          <h2 class="text-xl font-bold text-slate-50">¿Eliminar palabra?</h2>
-          <p class="text-zinc-400 text-sm">
-            Estás a punto de eliminar <span class="text-slate-200 font-semibold uppercase">"{{ wordToDelete?.word }}"</span> de tu vocabulario local y la nube. Esta acción no se puede deshacer.
-          </p>
-          <div class="flex items-center gap-3 w-full pt-4">
-            <button @click="cancelDelete" class="flex-1 bg-zinc-800 hover:bg-zinc-700 text-slate-300 font-medium px-4 py-3 rounded-xl transition-colors text-sm cursor-pointer border border-zinc-700/50">
-              Cancelar
-            </button>
-            <button @click="handleDelete" class="flex-1 bg-red-500 hover:bg-red-600 text-white font-medium px-4 py-3 rounded-xl transition-colors shadow-lg shadow-red-500/20 text-sm cursor-pointer">
-              Eliminar
-            </button>
-          </div>
+    <BaseModal
+      v-if="isDeleteDialogOpen"
+      title="¿Eliminar palabra?"
+      tone="red"
+      @close="cancelDelete"
+    >
+      <template #icon>
+        <AlertTriangle class="w-8 h-8 text-red-500" />
+      </template>
+
+      <p>
+        Estás a punto de eliminar
+        <span class="text-slate-200 font-semibold uppercase">"{{ wordToDelete?.word }}"</span> de
+        tu vocabulario local y la nube. Esta acción no se puede deshacer.
+      </p>
+
+      <template #actions>
+        <div class="flex items-center gap-3 w-full">
+          <button
+            @click="cancelDelete"
+            class="flex-1 bg-zinc-800 hover:bg-zinc-700 text-slate-300 font-medium px-4 py-3 rounded-xl transition-colors text-sm cursor-pointer border border-zinc-700/50"
+          >
+            Cancelar
+          </button>
+          <button
+            @click="handleDelete"
+            class="flex-1 bg-red-500 hover:bg-red-600 text-white font-medium px-4 py-3 rounded-xl transition-colors shadow-lg shadow-red-500/20 text-sm cursor-pointer"
+          >
+            Eliminar
+          </button>
         </div>
-      </div>
-    </div>
+      </template>
+    </BaseModal>
   </div>
 </template>
