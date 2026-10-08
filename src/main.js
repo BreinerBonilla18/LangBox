@@ -1,5 +1,6 @@
 import { useAuthStore } from './stores/authStore'
 import { useNetworkStore } from './stores/networkStore'
+import { startFlushScheduler } from './core/api/syncService'
 import { createPinia } from 'pinia'
 import router from './core/router'
 import { createApp } from 'vue'
@@ -16,7 +17,14 @@ app.use(router)
 
 // El estado de conexión debe existir ANTES del montaje: las vistas lo leen al
 // renderizarse (por ejemplo, para desactivar el buscador).
-useNetworkStore(pinia).init()
+const networkStore = useNetworkStore(pinia)
+networkStore.init()
+
+// La cola offline se reintenta con backoff: el borde offline→online que
+// observa el store de red puede no dispararse nunca (p. ej. PWAs en segundo
+// plano no emiten el evento `offline`), y sin esto un repaso hecho sin conexión
+// quedaría esperando al próximo login para subir.
+startFlushScheduler({ onFlushed: () => networkStore.refreshPendingCount() })
 
 // `beforeinstallprompt` se emite una sola vez por visita y solo si el navegador
 // decide ofrecer la instalación. Escucharlo aquí, antes de resolver la primera

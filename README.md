@@ -242,6 +242,7 @@ Cloud sync is optional and never overwrites good progress:
 - Only words that do not exist yet in the cloud are inserted, using `ignoreDuplicates`
 - The SRS state (`r`, `ef`, `i`, `nrd`) is written by a single dedicated path, so a device with stale data can never overwrite a newer review schedule
 - Reviews made while the initial sync is still running wait for it, instead of computing a schedule from a stale local SRS
+- **The offline queue wins over the cloud.** The login download skips words that still have queued operations, so an offline review is never rolled back — even if the access token expired while offline (the queue is stamped with its owner account instead of being dropped). The queue itself is drained by `startFlushScheduler`, which retries with backoff on `online`/`visibilitychange` rather than relying only on the observed offline→online transition (PWAs, iOS included, may never fire the `offline` event).
 
 ## 🤝 Contributing
 

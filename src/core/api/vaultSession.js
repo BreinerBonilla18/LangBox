@@ -49,7 +49,7 @@ export async function claimOrphans(userId) {
   )
 
   for (const word of orphans) {
-    await enqueuePendingOp(OP_UPSERT, word.id, { ...word, user_id: userId }, MODE_CONTENT)
+    await enqueuePendingOp(OP_UPSERT, word.id, { ...word, user_id: userId }, MODE_CONTENT, userId)
   }
 
   return orphans.length
@@ -89,10 +89,13 @@ export async function purgeForeignWords(userId) {
   await db.words.bulkDelete([...foreignIds])
 
   // Toda operación que ya no tiene palabra local detrás pertenece al dueño
-  // anterior: se descarta para no reescribirla con la sesión actual.
+  // anterior: se descarta para no reescribirla con la sesión actual. Lo mismo
+  // vale para las selladas con otra cuenta, aunque su palabra siga viva.
   const remainingIds = new Set(words.filter(word => !foreignIds.has(word.id)).map(word => word.id))
   const ops = await db.pendingOps.toArray()
-  const staleOps = ops.filter(op => !remainingIds.has(op.word_id))
+  const staleOps = ops.filter(
+    op => !remainingIds.has(op.word_id) || (op.user_id && op.user_id !== userId)
+  )
   if (staleOps.length > 0) {
     await db.pendingOps.bulkDelete(staleOps.map(op => [op.word_id, op.type]))
   }
@@ -115,8 +118,9 @@ export async function hasUserWords(userId) {
 /**
  * @function clearUserLocalData
  * @description Opción B del logout: elimina del dispositivo las palabras del
- * usuario que se va y vacía la cola de pendientes. Las palabras sin cuenta
- * (modo invitado) no se tocan.
+ * usuario que se va y vacía también SUS operaciones pendientes (las de otras
+ * cuentas, si las hubiera, se conservan). Las palabras sin cuenta (modo
+ * invitado) no se tocan.
  * @param {string} userId - UUID del usuario que cierra sesión.
  * @returns {Promise<number>} Cantidad de palabras eliminadas.
  */
@@ -125,7 +129,14 @@ export async function clearUserLocalData(userId) {
   const ids = words.filter(word => word.user_id === userId).map(word => word.id)
 
   if (ids.length > 0) await db.words.bulkDelete(ids)
-  await db.pendingOps.clear()
+
+  // Sin dueño registrado = creadas antes del sellado por cuenta: se asumen de
+  // la cuenta saliente (mismo criterio con el que `flushPendingOps` las subiría).
+  const ops = await db.pendingOps.toArray()
+  const mine = ops.filter(op => !op.user_id || op.user_id === userId)
+  if (mine.length > 0) {
+    await db.pendingOps.bulkDelete(mine.map(op => [op.word_id, op.type]))
+  }
 
   return ids.length
 }

@@ -209,8 +209,11 @@ export const useAuthStore = defineStore('auth', () => {
         return
       }
 
-      // Si se dispara SIGNED_IN pero ya sincronizamos este usuario en esta sesión, lo ignoramos
-      if (event === 'SIGNED_IN' && !isWordsSynced.value) {
+      // SIGNED_IN arranca la sincronización de la sesión. TOKEN_REFRESHED la
+      // retoma si el arranque ocurrió offline con el token caducado: entonces
+      // getSession() devolvió null y no hubo sincronización inicial, pero al
+      // volver la red auth-js refresca el token sin cambiar de evento.
+      if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && !isWordsSynced.value) {
         await startSessionSync(newUser.id)
       }
     })

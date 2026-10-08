@@ -1,4 +1,4 @@
-import { supabase } from '../db/supabaseClient'
+import { supabase, getStoredUserId } from '../db/supabaseClient'
 import { db } from '../db/database'
 import { isBrowserOnline } from '../utils/online'
 
@@ -43,6 +43,20 @@ let pendingSync = null
 // Promesa del vaciado de la cola, para no lanzar dos volcados a la vez
 // (pueden coincidir una reconexión y un evento de foco).
 let pendingFlush = null
+
+/**
+ * @function resolveSessionContext
+ * @description Obtiene la sesión activa y, como respaldo, el id de usuario
+ * guardado en el almacén crudo de Supabase. `getSession()` devuelve `null`
+ * cuando el access token caducó y no hay red para refrescarlo, pero `auth-js`
+ * conserva la sesión en storage en ese caso: sin ese respaldo, una revisión
+ * offline con token expirado parecería de invitado y se perdería sin encolarse.
+ * @returns {Promise<{session: object|null, ownerId: string|null}>}
+ */
+async function resolveSessionContext() {
+  const { data: { session } } = await supabase.auth.getSession()
+  return { session, ownerId: session?.user?.id ?? getStoredUserId() }
+}
 
 /**
  * @function todayISO
@@ -223,9 +237,16 @@ async function performLoginSync(userId) {
     }
   }
 
-  // 4) Volcar la nube sobre el vault local: aquí el SRS remoto pisa al local
-  if (mergedRows.length > 0) {
-    await db.words.bulkPut(mergedRows.map(sanitizeFromCloud))
+  // 4) Volcar la nube sobre el vault local: aquí el SRS remoto pisa al local.
+  //    Excepción: las palabras con operaciones pendientes en la cola. Ahí gana
+  //    lo local —un repaso hecho offline no puede ser retrocedido por una nube
+  //    más vieja— y un delete pendiente impide que la descarga resucite la
+  //    palabra. La cola se vacía justo después (`flushPendingOps`), así que la
+  //    nube termina recibiendo el estado local más fresco.
+  const pendingIds = new Set((await db.pendingOps.toArray()).map(op => op.word_id))
+  const rowsToWrite = mergedRows.filter(row => !pendingIds.has(row.id))
+  if (rowsToWrite.length > 0) {
+    await db.words.bulkPut(rowsToWrite.map(sanitizeFromCloud))
   }
 }
 
@@ -280,19 +301,23 @@ export async function waitForPendingSync() {
  * @description Encola una operación para subirla cuando vuelva la conexión.
  * Como la clave primaria de 'pendingOps' es `[word_id+type]`, encolar dos veces
  * la misma operación la SOBRESCRIBE: siempre gana el estado más reciente.
+ * Cada operación se sella con su `user_id` dueño para que, tras un cambio de
+ * cuenta, `flushPendingOps` nunca la suba con la sesión equivocada.
  * @param {string} type - OP_UPSERT u OP_DELETE
  * @param {string} wordId
  * @param {object} payload - Palabra local completa (solo para OP_UPSERT)
  * @param {string} mode - MODE_CONTENT o MODE_SRS (solo para OP_UPSERT)
+ * @param {string|null} ownerId - UUID de la cuenta a la que pertenece la operación
  * @returns {Promise<void>}
  */
-export async function enqueuePendingOp(type, wordId, payload, mode) {
+export async function enqueuePendingOp(type, wordId, payload, mode, ownerId = null) {
   try {
     await db.pendingOps.put({
       word_id: wordId,
       type,
       mode: mode ?? MODE_SRS,
-      payload: payload ? sanitizeForInsert(payload, 'pending') : null,
+      user_id: ownerId ?? null,
+      payload: payload ? sanitizeForInsert(payload, ownerId ?? 'pending') : null,
       created_at: new Date().toISOString()
     })
     console.log(`[sync] Operación "${type}" encolada para "${wordId}" (${mode ?? '-'}): sin conexión.`)
@@ -398,27 +423,85 @@ async function pushDeleteToCloud(userId, wordId) {
 }
 
 /**
+ * @function resolveSrsPush
+ * @description Monta el payload SRS que debe subirse para una operación
+ * encolada, priorizando la palabra VIVA local: los repasos escriben primero en
+ * Dexie, así que el estado local siempre es el más reciente (el payload de la
+ * operación es solo una instantánea de respaldo).
+ * @param {object} op - Operación pendiente de tipo upsert en modo SRS
+ * @param {string} userId
+ * @returns {object|null} Payload listo para subir, o null si no hay datos válidos
+ */
+async function resolveSrsPush(op, userId) {
+  const local = await db.words.get(op.word_id)
+
+  // Palabra borrada localmente: el delete pendiente manda; subir este upsert
+  // la resucitaría en la nube.
+  if (local?.is_deleted) return null
+
+  const source =
+    local && SRS_COLUMNS.every(column => local[column] !== undefined && local[column] !== null)
+      ? local
+      : op.payload
+  if (!source) return null
+
+  const payload = sanitizeForCloud(source, userId)
+  if (SRS_COLUMNS.some(column => payload[column] === undefined)) return null
+  return payload
+}
+
+/**
  * @function flushPendingOps
  * @description Vuelca en la nube todas las operaciones acumuladas durante el
  * periodo offline. Cada operación solo se descarta de la cola si la nube la
  * confirmó, de modo que un fallo intermedio nunca pierde cambios.
- * @returns {Promise<void>}
+ * Solo suben las operaciones de la cuenta activa (o las antiguas, sin dueño
+ * registrado, que se suben con la sesión actual por compatibilidad).
+ * @returns {Promise<{synced: number, remaining: number, retryable: number}>}
+ * `remaining` es lo que queda en la cola y `retryable` cuánto de eso merece un
+ * reintento (operaciones de la cuenta actual); el scheduler de reconexión usa
+ * este último para no reintentar en bucle operaciones de otra cuenta.
  */
 export async function flushPendingOps() {
   if (pendingFlush) return pendingFlush
-  if (!isBrowserOnline()) return
+  if (!isBrowserOnline()) {
+    return { synced: 0, remaining: await countPendingOps().catch(() => 0), retryable: 0 }
+  }
 
   const flush = (async () => {
     const ops = await db.pendingOps.toArray()
-    if (ops.length === 0) return
+    if (ops.length === 0) return { synced: 0, remaining: 0, retryable: 0 }
 
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) return // Sin sesión no hay a quién subirle los cambios.
+    const { session, ownerId } = await resolveSessionContext()
+
+    // Nadie reconoce esta cola: espera a que alguien inicie sesión (el sync de
+    // login la vacía). No reintentar en este estado solo haría ruido.
+    if (!ownerId) return { synced: 0, remaining: ops.length, retryable: 0 }
+
+    const ownOps = ops.filter(op => !op.user_id || op.user_id === ownerId)
+
+    // Token caducado sin refresco posible: reintentar; con red el auto-refresh
+    // de auth-js terminará dando sesión.
+    if (!session) {
+      return { synced: 0, remaining: ops.length, retryable: ownOps.length }
+    }
     const userId = session.user.id
+
+    // Un delete pendiente anula los upserts de la misma palabra: subirlos
+    // después reviviría en la nube una palabra que se puso en camino a borrarse.
+    const deletedIds = new Set(ownOps.filter(op => op.type === OP_DELETE).map(op => op.word_id))
+    for (const op of ownOps) {
+      if (op.type === OP_UPSERT && deletedIds.has(op.word_id)) {
+        await db.pendingOps.delete([op.word_id, op.type])
+      }
+    }
+    const uploadable = ownOps.filter(
+      op => !(op.type === OP_UPSERT && deletedIds.has(op.word_id))
+    )
 
     let synced = 0
 
-    for (const op of ops) {
+    for (const op of uploadable) {
       try {
         let ok = false
 
@@ -427,7 +510,14 @@ export async function flushPendingOps() {
         } else if (op.mode === MODE_CONTENT) {
           ok = await pushWordToCloud(userId, { ...op.payload, user_id: userId })
         } else {
-          ok = await pushSrsToCloud(userId, { ...op.payload, user_id: userId })
+          const srs = await resolveSrsPush(op, userId)
+          if (srs) {
+            ok = await pushSrsToCloud(userId, srs)
+          } else {
+            // Sin datos válidos que subir: se retira para no bloquear la cola.
+            console.warn(`[sync] Operación SRS de "${op.word_id}" descartada: sin datos que subir.`)
+            ok = true
+          }
         }
 
         if (ok) {
@@ -441,12 +531,15 @@ export async function flushPendingOps() {
       }
     }
 
+    const leftOps = await db.pendingOps.toArray()
+    const retryable = leftOps.filter(op => !op.user_id || op.user_id === userId).length
     if (synced > 0) console.log(`[sync] ${synced} operación(es) pendiente(s) sincronizadas.`)
+    return { synced, remaining: leftOps.length, retryable }
   })()
 
   pendingFlush = flush
   try {
-    await flush
+    return await flush
   } finally {
     if (pendingFlush === flush) pendingFlush = null
   }
@@ -456,8 +549,9 @@ export async function flushPendingOps() {
  * @function syncWordToCloud
  * @description Actualiza el progreso SRS de una palabra ya sincronizada en la nube.
  * Es la única vía que escribe `r/ef/i/nrd` sobre un registro existente, y solo
- * se usa tras una revisión real en las flashcards. Si no hay red, el avance se
- * encola para no perder el progreso de repaso.
+ * se usa tras una revisión real en las flashcards. Si no hay red O no hay
+ * sesión utilizable (token caducado sin red para refrescarlo), el avance se
+ * encola con el dueño conocido: una revisión offline nunca se descarta.
  * @param {object} wordPayload - Palabra con su SRS ya calculado
  * @returns {Promise<void>}
  */
@@ -465,11 +559,12 @@ export async function syncWordToCloud(wordPayload) {
   // Nunca escribir SRS antes de que la nube haya descargado su estado autoritativo
   await waitForPendingSync()
 
-  const { data: { session } } = await supabase.auth.getSession()
+  const { session, ownerId } = await resolveSessionContext()
 
-  if (!session) return // Si no hay usuario autenticado, opera solo localmente
+  // Sin cuenta (invitado real): opera solo localmente, como siempre.
+  if (!ownerId) return
 
-  const payload = sanitizeForCloud(wordPayload, session.user.id)
+  const payload = sanitizeForCloud(wordPayload, ownerId)
 
   // Una actualización SRS incompleta reiniciaría la nube, así que se descarta
   if (SRS_COLUMNS.some(column => payload[column] === undefined)) {
@@ -477,13 +572,14 @@ export async function syncWordToCloud(wordPayload) {
     return
   }
 
-  if (!isBrowserOnline()) {
-    await enqueuePendingOp(OP_UPSERT, payload.id, wordPayload, MODE_SRS)
+  // Sin sesión utilizable o sin red: se encola; jamás se tira el repaso.
+  if (!session || !isBrowserOnline()) {
+    await enqueuePendingOp(OP_UPSERT, payload.id, wordPayload, MODE_SRS, ownerId)
     return
   }
 
-  const ok = await pushSrsToCloud(session.user.id, payload)
-  if (!ok) await enqueuePendingOp(OP_UPSERT, payload.id, wordPayload, MODE_SRS)
+  const ok = await pushSrsToCloud(ownerId, payload)
+  if (!ok) await enqueuePendingOp(OP_UPSERT, payload.id, wordPayload, MODE_SRS, ownerId)
 }
 
 /**
@@ -491,44 +587,138 @@ export async function syncWordToCloud(wordPayload) {
  * @description Inserta una palabra recién guardada sin alterar el SRS que ya exista
  * en la nube. Si la palabra ya está sincronizada desde otro dispositivo, solo se
  * actualiza el contenido (significado, fonética, sinónimos...) y se preserva
- * intacto su `r/ef/i/nrd`. Si no hay red, queda encolada con ese mismo criterio.
+ * intacto su `r/ef/i/nrd`. Sin red o sin sesión utilizable queda encolada con
+ * ese mismo criterio y el dueño conocido.
  * @param {object} wordPayload - Palabra guardada localmente
  * @returns {Promise<void>}
  */
 export async function syncNewWordToCloud(wordPayload) {
   await waitForPendingSync()
 
-  const { data: { session } } = await supabase.auth.getSession()
+  const { session, ownerId } = await resolveSessionContext()
 
-  if (!session) return // Si no hay usuario autenticado, opera solo localmente
+  if (!ownerId) return // Si no hay usuario autenticado, opera solo localmente
 
-  if (!isBrowserOnline()) {
-    await enqueuePendingOp(OP_UPSERT, wordPayload.id, wordPayload, MODE_CONTENT)
+  if (!session || !isBrowserOnline()) {
+    await enqueuePendingOp(OP_UPSERT, wordPayload.id, wordPayload, MODE_CONTENT, ownerId)
     return
   }
 
-  const payload = sanitizeForInsert(wordPayload, session.user.id)
-  const ok = await pushWordToCloud(session.user.id, payload)
-  if (!ok) await enqueuePendingOp(OP_UPSERT, payload.id, wordPayload, MODE_CONTENT)
+  const payload = sanitizeForInsert(wordPayload, ownerId)
+  const ok = await pushWordToCloud(ownerId, payload)
+  if (!ok) await enqueuePendingOp(OP_UPSERT, payload.id, wordPayload, MODE_CONTENT, ownerId)
 }
 
 /**
  * @function syncDeleteWordFromCloud
  * @description Remueve permanentemente una palabra de la base de datos central en la nube.
- * Solo afecta si el usuario cuenta con una sesión válida. Sin conexión, el borrado
- * se encola en lugar de descartarse en silencio.
+ * Solo afecta si el usuario cuenta con una sesión o con una sesión recordada en
+ * este dispositivo. Sin conexión o sin sesión utilizable, el borrado se encola
+ * en lugar de descartarse en silencio.
  * @param {string} id - Identificador único de la palabra a eliminar
  * @returns {Promise<void>}
  */
 export async function syncDeleteWordFromCloud(id) {
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return // Si no hay usuario autenticado, no hacer nada
+  const { session, ownerId } = await resolveSessionContext()
 
-  if (!isBrowserOnline()) {
-    await enqueuePendingOp(OP_DELETE, id)
+  if (!ownerId) return // Si no hay usuario autenticado, no hacer nada
+
+  if (!session || !isBrowserOnline()) {
+    await enqueuePendingOp(OP_DELETE, id, null, undefined, ownerId)
     return
   }
 
-  const ok = await pushDeleteToCloud(session.user.id, id)
-  if (!ok) await enqueuePendingOp(OP_DELETE, id)
+  const ok = await pushDeleteToCloud(ownerId, id)
+  if (!ok) await enqueuePendingOp(OP_DELETE, id, null, undefined, ownerId)
+}
+
+// --- Scheduler de reintentos de la cola -----------------------------------
+// La reconexión observada por `networkStore` (borde offline→online) no basta
+// como único disparador: en PWAs —iOS incluido— el evento `offline` puede no
+// dispararse nunca, con lo que no existe borde que observar y la cola se
+// quedaría quieta hasta el próximo login. Este scheduler reintenta con backoff
+// mientras quede trabajo propio y se apoya también en `online`/`visibilitychange`.
+const RETRY_BASE_MS = 5000
+const RETRY_MAX_MS = 60000
+
+let schedulerStarted = false
+let schedulerRunning = false
+let schedulerTimer = null
+let schedulerDelay = RETRY_BASE_MS
+let schedulerOnFlushed = null
+
+/**
+ * @function startFlushScheduler
+ * @description Arranca los reintentos automáticos de `flushPendingOps`.
+ * Idempotente: llamar una sola vez (desde `main.js`).
+ * @param {object} [options]
+ * @param {Function} [options.onFlushed] - Se ejecuta tras cada intento con el
+ * resultado `{synced, remaining, retryable}` (p. ej. refrescar el contador).
+ * @returns {void}
+ */
+export function startFlushScheduler({ onFlushed } = {}) {
+  if (schedulerStarted || typeof window === 'undefined') return
+  schedulerStarted = true
+  schedulerOnFlushed = onFlushed ?? null
+
+  const clearTimer = () => {
+    if (schedulerTimer !== null) {
+      clearTimeout(schedulerTimer)
+      schedulerTimer = null
+    }
+  }
+
+  const scheduleRetry = () => {
+    if (schedulerTimer !== null) return
+    schedulerTimer = setTimeout(() => {
+      schedulerTimer = null
+      void runFlush()
+    }, schedulerDelay)
+    schedulerDelay = Math.min(schedulerDelay * 2, RETRY_MAX_MS)
+  }
+
+  const runFlush = async () => {
+    if (schedulerRunning) return
+    schedulerRunning = true
+    clearTimer()
+
+    try {
+      if (!isBrowserOnline()) return
+
+      const result = await flushPendingOps()
+
+      if (schedulerOnFlushed) {
+        try {
+          schedulerOnFlushed(result)
+        } catch (error) {
+          console.error('Error en el callback tras vaciar la cola:', error)
+        }
+      }
+
+      if (result?.retryable > 0) {
+        scheduleRetry()
+      } else {
+        schedulerDelay = RETRY_BASE_MS
+      }
+    } catch (error) {
+      console.error('Error en el reintento de sincronización:', error)
+      scheduleRetry()
+    } finally {
+      schedulerRunning = false
+    }
+  }
+
+  window.addEventListener('online', () => void runFlush())
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') void runFlush()
+  })
+
+  // Si la app arranca con cola ya acumulada (p. ej. la sesión anterior cerró
+  // offline), empezar a intentar en cuanto haya red: el evento `online` se
+  // perdería si el navegador nunca emitió el `offline` correspondiente.
+  countPendingOps()
+    .then(count => {
+      if (count > 0) scheduleRetry()
+    })
+    .catch(() => {})
 }
