@@ -9,13 +9,18 @@ const PROBE_TIMEOUT = 5000
 // `navigator.onLine` puede seguir dando `true` mucho después de caerse internet.
 const PROBE_INTERVAL = 30000
 
+// Mínimo real entre sondas automáticas. El intervalo y el `visibilitychange`
+// de enfocar la pestaña se solapan: sin este margen, cambiar de ventana
+// disparaba una llamada idéntica a la que acababa de hacerse.
+const PROBE_MIN_GAP = 15000
+
 /**
  * @function probeInternet
  * @description Comprueba de verdad que hay salida a internet. `navigator.onLine`
  * solo indica que existe interfaz de red, y da `true` en redes Wi-Fi captive o
- * sin DNS. La sonda usa el endpoint de salud de Supabase (no requiere
- * credenciales) y trata CUALQUIER respuesta recibida —incluidas 4xx/5xx— como
- * prueba de que la red funciona: lo que interesa es que hubo conectividad.
+ * sin DNS. La sonda usa el endpoint de salud de Supabase con el `apikey` público
+ * y trata CUALQUIER respuesta recibida —incluidas 4xx/5xx— como prueba de que
+ * la red funciona: lo que interesa es que hubo conectividad.
  * @returns {Promise<boolean>}
  */
 async function probeInternet() {
@@ -29,6 +34,9 @@ async function probeInternet() {
     await fetch(`${supabaseUrl}/auth/v1/health`, {
       method: 'GET',
       cache: 'no-store',
+      // Sin la cabecera `apikey` la pasarela responde 401 y el navegador deja
+      // un error en consola por cada sonda; con ella responde 200 (JSON de versión).
+      headers: { apikey: import.meta.env.VITE_SUPABASE_ANON_KEY || '' },
       signal: controller.signal
     })
     return true
@@ -60,6 +68,11 @@ export const useNetworkStore = defineStore('network', () => {
   // Suscriptores que se ejecutan al recuperar la conexión (p. ej. vaciar la cola).
   const reconnectHandlers = new Set()
   let probeTimer = null
+
+  // Sonda en vuelco y marca de la última: evitan llamadas duplicadas cuando
+  // el intervalo, el foco de ventana y el evento `online` coinciden.
+  let probePromise = null
+  let lastProbeAt = 0
 
   /**
    * @function hasPendingSync
@@ -124,12 +137,22 @@ export const useNetworkStore = defineStore('network', () => {
       return false
     }
 
+    // Si ya hay una sonda en vuelco se reutiliza en lugar de lanzar otra:
+    // `online` + intervalo + foco pueden solaparse y duplicar la llamada.
+    if (probePromise) return probePromise
+
     isVerifying.value = true
-    try {
+    lastProbeAt = Date.now()
+    probePromise = (async () => {
       const reachable = await probeInternet()
       applyOnlineState(reachable)
       return reachable
+    })()
+
+    try {
+      return await probePromise
     } finally {
+      probePromise = null
       isVerifying.value = false
     }
   }
@@ -144,7 +167,11 @@ export const useNetworkStore = defineStore('network', () => {
 
     const tick = () => {
       // Solo sondeamos si la app tiene el foco: en segundo plano no gastamos red.
-      if (document.visibilityState === 'visible' && !isSyncing.value) verify()
+      if (document.visibilityState !== 'visible' || isSyncing.value) return
+      // Enfocar la pestaña no debe re-sondear si acabamos de hacerlo: con el
+      // margen mínimo, una ráfaga de cambios de ventana produce una sola llamada.
+      if (Date.now() - lastProbeAt < PROBE_MIN_GAP) return
+      verify()
     }
 
     probeTimer = setInterval(tick, PROBE_INTERVAL)

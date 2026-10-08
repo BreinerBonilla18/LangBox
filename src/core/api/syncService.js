@@ -312,15 +312,25 @@ export async function waitForPendingSync() {
  */
 export async function enqueuePendingOp(type, wordId, payload, mode, ownerId = null) {
   try {
+    let effectiveMode = mode ?? MODE_SRS
+    if (type === OP_UPSERT && effectiveMode !== MODE_SRS) {
+      // Una revisión pendiente no puede degradarse: si tras revisar la tarjeta
+      // se vuelve a guardar la palabra desde el buscador, esta llamada encola
+      // en modo 'content' con la MISMA clave y pisaría la operación 'srs'.
+      // El flush en modo contenido preservaría el SRS de la nube y el avance
+      // local se perdería (una fusión posterior dejaría el SRS local en 0).
+      const existing = await db.pendingOps.get([wordId, type])
+      if (existing?.mode === MODE_SRS) effectiveMode = MODE_SRS
+    }
     await db.pendingOps.put({
       word_id: wordId,
       type,
-      mode: mode ?? MODE_SRS,
+      mode: effectiveMode,
       user_id: ownerId ?? null,
       payload: payload ? sanitizeForInsert(payload, ownerId ?? 'pending') : null,
       created_at: new Date().toISOString()
     })
-    console.log(`[sync] Operación "${type}" encolada para "${wordId}" (${mode ?? '-'}): sin conexión.`)
+    console.log(`[sync] Operación "${type}" encolada para "${wordId}" (${effectiveMode ?? '-'}): sin conexión.`)
   } catch (error) {
     console.error('Error encolando operación pendiente:', error)
   }
