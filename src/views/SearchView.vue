@@ -7,13 +7,16 @@ import { useNetworkStore } from '../stores/networkStore'
 import { useAuthStore } from '../stores/authStore'
 import { useAiProviderStore } from '../stores/aiProviderStore'
 import { ref, computed, onMounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
-import { Volume2, LoaderCircle, WifiOff, Info } from '@lucide/vue'
+import { useRouter, useRoute } from 'vue-router'
+import { Volume2, LoaderCircle, WifiOff, Info, Share } from '@lucide/vue'
 import geminiIcon from '../assets/gemini.svg'
 import groqIcon from '../assets/groq.svg'
 import openrouterIcon from '../assets/openrouter_dark.svg'
+import { buildShareUrl } from '../core/utils/share'
+import ShareWordModal from '../components/ShareWordModal.vue'
 
 const router = useRouter()
+const route = useRoute()
 const networkStore = useNetworkStore()
 const authStore = useAuthStore()
 const aiProviderStore = useAiProviderStore()
@@ -41,6 +44,17 @@ const props = defineProps({
 
 const errorMessage = ref('')
 const isLoading = ref(true)
+
+// Modal de compartir palabra y de quién llegó el enlace (query `via`).
+const isShareOpen = ref(false)
+const sharedBy = computed(() => route.query.via || '')
+
+// Nombre visible del usuario autenticado para el enlace compartido.
+const shareName = computed(() =>
+  (authStore.user?.user_metadata?.full_name || authStore.user?.email || '').trim()
+)
+
+const shareUrl = computed(() => buildShareUrl(props.word, shareName.value))
 
 // `isFromCache` marca que lo que se muestra no viene de la IA sino de IndexedDB.
 const isFromCache = ref(false)
@@ -210,7 +224,19 @@ watch(() => networkStore.isOnline, (online) => {
 <template>
   <div class="flex flex-col items-center justify-center px-4 py-8 min-h-screen">
     <div class="w-full max-w-2xl">
-    
+
+    <!-- Aviso de palabra compartida: llega por el query `?via=` del enlace -->
+    <div
+      v-if="sharedBy"
+      class="mb-5 flex items-center gap-2.5 rounded-xl border border-indigo-500/20 bg-indigo-500/10 px-4 py-3 text-sm text-indigo-200"
+    >
+      <Share class="h-4 w-4 shrink-0" />
+      <span>
+        <span class="font-semibold text-slate-50">{{ sharedBy }}</span>
+        te compartió esta palabra.
+      </span>
+    </div>
+
     <!-- Card de carga -->
     <div v-if="isLoading" class="text-center py-16 space-y-4">
       <div class="inline-block w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
@@ -272,6 +298,14 @@ watch(() => networkStore.isOnline, (online) => {
               class="p-2 text-zinc-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent">
               <LoaderCircle v-if="isLoadingFor(headSpeechKey)" class="w-6 h-6 animate-spin" />
               <Volume2 v-else class="w-6 h-6" :class="isSpeakingFor(headSpeechKey) && 'text-indigo-400 animate-pulse'" />
+            </button>
+            <button
+              @click="isShareOpen = true"
+              title="Compartir"
+              aria-label="Compartir"
+              class="p-2 text-zinc-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-colors cursor-pointer"
+            >
+              <Share class="w-6 h-6" />
             </button>
           </div>
         </div>
@@ -357,5 +391,12 @@ watch(() => networkStore.isOnline, (online) => {
 
     </div>
     </div>
+
+    <ShareWordModal
+      v-if="isShareOpen"
+      :url="shareUrl"
+      :word="props.word"
+      @close="isShareOpen = false"
+    />
   </div>
 </template>

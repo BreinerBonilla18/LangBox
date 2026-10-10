@@ -17,6 +17,7 @@
 - **📴 Works Offline**: Installable PWA with a service worker. The app boots, and your vocabulary and flashcards keep working, with no connection
 - **🔄 Offline Sync Queue**: Changes made without internet are queued in IndexedDB and uploaded automatically once you are back online
 - **☁️ Cloud Sync**: Optional synchronization with Supabase when logged in with a Google account
+- **🔗 Word Sharing**: Share any word with a single link (`.search/<word>?via=<name>`); the receiver opens it in the search screen and sees who shared it
 - **🔐 Secure Authentication**: Google OAuth via Supabase
 - **🎨 Modern UI**: Clean, responsive design with Tailwind CSS
 
@@ -153,12 +154,19 @@ This is the part that shapes every other decision in the codebase.
 - Words are stored locally along with their SRS state
 - If logged in with Google, words sync to the cloud
 
-### 3. Practice with Flashcards
+### 3. Share a Word
+
+- Tap the Share icon next to the word — in the search screen or in an vocabulary row — to open the share modal
+- The modal shows a link (`.search/<word>?via=<your name>`) to copy, or opens the native share sheet on devices with the Web Share API
+- Whoever opens the link lands on the regular search screen with a banner **"X te compartió esta palabra"** at the top. The word is then searched normally: local copy first, then AI (the answer may differ slightly from the original share, since it is regenerated with the same intent)
+- Nothing is stored in the cloud: the link only carries the word and the sharer's name
+
+### 4. Practice with Flashcards
 
 - The Flashcards section lists the words whose next review date has arrived
 - Rate your recall and the SM-2 algorithm reschedules them: a failed answer resets the word to the first interval, a successful one grows it by the ease factor
 
-### 4. Install the App
+### 5. Install the App
 
 - On Chromium browsers an in-app button opens the native install dialog
 - On iOS, Safari is the only browser that can install a PWA: tap the button for the *Share → Add to Home Screen* steps
@@ -179,7 +187,8 @@ LangBox/
 ├── src/
 │   ├── assets/                  # Assets imported from JS
 │   ├── components/
-│   │   └── NetworkBanner.vue    # Offline, reconnecting and pending-sync notices
+│   │   ├── NetworkBanner.vue    # Offline, reconnecting and pending-sync notices
+│   │   └── ShareWordModal.vue   # URL to copy / native share for a word
 │   ├── composables/
 │   │   └── useInstallPrompt.js  # beforeinstallprompt / appinstalled
 │   ├── core/
@@ -193,6 +202,7 @@ LangBox/
 │   │   ├── router/index.js
 │   │   └── utils/
 │   │       ├── online.js        # navigator.onLine, without Vue/Pinia
+│   │       ├── share.js         # Shared word link builder + clipboard
 │   │       └── storage.js       # navigator.storage.persist()
 │   ├── layouts/Layout.vue
 │   ├── stores/

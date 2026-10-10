@@ -10,15 +10,20 @@ import {
   Volume2,
   LoaderCircle,
   AlertTriangle,
+  Share,
 } from "@lucide/vue";
 import { getAllVaultWords, deleteWordFromVault } from "../core/api/wordStorage";
 import { syncDeleteWordFromCloud } from "../core/api/syncService";
 import { useSpeech } from "../composables/useSpeech";
 import BaseModal from "../components/BaseModal.vue";
+import ShareWordModal from "../components/ShareWordModal.vue";
+import { buildShareUrl } from "../core/utils/share";
+import { useAuthStore } from "../stores/authStore";
 import { ref, onMounted, computed, watch } from "vue";
 import { useRouter } from "vue-router";
 
 const router = useRouter();
+const authStore = useAuthStore();
 const {
   speak,
   isDisabled: isSpeechDisabled,
@@ -36,6 +41,19 @@ const exampleSpeechKey = (word, index) => `word-${word.id}-example-${index}`;
 const expandedWord = ref("");
 const isLoading = ref(true);
 const words = ref([]);
+
+// Modal de compartir palabra y la palabra que se está compartiendo.
+const isShareOpen = ref(false);
+const wordToShare = ref(null);
+
+// Nombre visible del usuario autenticado para el enlace compartido.
+const shareName = computed(() =>
+  (authStore.user?.user_metadata?.full_name || authStore.user?.email || "").trim()
+);
+
+const shareUrl = computed(() =>
+  wordToShare.value ? buildShareUrl(wordToShare.value.word, shareName.value) : ""
+);
 
 const isDeleteDialogOpen = ref(false);
 const wordToDelete = ref(null);
@@ -87,6 +105,18 @@ const handleToggleExpand = (wordId) => {
   } else {
     expandedWord.value = ""
   }
+};
+
+// Función para abrir el modal de compartir una palabra
+const handleShare = (word) => {
+  wordToShare.value = word;
+  isShareOpen.value = true;
+};
+
+// Función para cerrar el modal de compartir
+const closeShare = () => {
+  isShareOpen.value = false;
+  wordToShare.value = null;
 };
 
 // Función para confirmar eliminación
@@ -295,6 +325,13 @@ onMounted(() => {
             </div>
             <div class="flex items-center gap-1 sm:gap-2 shrink-0">
               <button
+                @click.stop="handleShare(word)"
+                class="p-1.5 sm:p-2 text-zinc-500 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-colors cursor-pointer"
+                title="Compartir"
+              >
+                <Share class="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+              <button
                 @click.stop="confirmDelete(word)"
                 class="p-1.5 sm:p-2 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
                 title="Delete word"
@@ -469,5 +506,12 @@ onMounted(() => {
         </div>
       </template>
     </BaseModal>
+
+    <ShareWordModal
+      v-if="isShareOpen && wordToShare"
+      :url="shareUrl"
+      :word="wordToShare.word"
+      @close="closeShare"
+    />
   </div>
 </template>
