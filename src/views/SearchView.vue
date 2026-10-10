@@ -1,23 +1,35 @@
 <script setup>
-import { enrichWordWithGemini } from "../core/api/aiService"
+import { enrichWordWithAI } from "../core/api/aiService"
 import { saveWordToVault, getWordFromVault } from '../core/api/wordStorage'
 import { syncNewWordToCloud } from '../core/api/syncService'
 import { useSpeech } from '../composables/useSpeech'
 import { useNetworkStore } from '../stores/networkStore'
 import { useAuthStore } from '../stores/authStore'
+import { useAiProviderStore } from '../stores/aiProviderStore'
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Volume2, LoaderCircle, WifiOff, Info } from '@lucide/vue'
+import geminiIcon from '../assets/gemini.svg'
+import groqIcon from '../assets/groq.svg'
+import openrouterIcon from '../assets/openrouter_dark.svg'
 
 const router = useRouter()
 const networkStore = useNetworkStore()
 const authStore = useAuthStore()
+const aiProviderStore = useAiProviderStore()
 const { speak, isDisabled: isSpeechDisabled, isLoadingFor, isSpeakingFor, speechLabelFor } = useSpeech()
 
 // Claves de los botones de voz: solo el botón que lanzó la lectura pinta
 // loader/pulso; el resto se queda en su aspecto deshabilitado.
 const headSpeechKey = 'head'
 const exampleSpeechKey = (index) => `example-${index}`
+
+// Iconos de los proveedores de IA, por clave de proveedor.
+const providerIcons = {
+  gemini: geminiIcon,
+  groq: groqIcon,
+  openrouter: openrouterIcon,
+}
 
 // Definir props
 const props = defineProps({
@@ -35,6 +47,21 @@ const isFromCache = ref(false)
 
 const wordData = ref(null)
 
+// Proveedor que finalmente respondió la consulta de IA y si fue vía fallback.
+const sourceProvider = ref(null)
+const usedFallback = ref(false)
+
+const sourceIcon = computed(() => providerIcons[sourceProvider.value])
+
+// Texto del aviso de origen: distingue el fallback automático del proveedor
+// normal, para que el usuario sepa qué IA generó el resultado.
+const sourceLabel = computed(() => {
+  if (usedFallback.value) {
+    return `${aiProviderStore.providerName(aiProviderStore.provider)} no respondió, se usó ${aiProviderStore.providerName(sourceProvider.value)}`
+  }
+  return `Generado con ${aiProviderStore.providerName(sourceProvider.value)}`
+})
+
 // La búsqueda va primero a la copia local y solo consulta a la IA si la palabra
 // no está en el vocabulario. Así una palabra ya guardada no se vuelve a buscar,
 // y sin conexión sigue funcionando con lo que hay en el dispositivo.
@@ -45,6 +72,8 @@ const fetchWordData = async (wordToSearch) => {
   errorMessage.value = ''
   wordData.value = null
   isFromCache.value = false
+  sourceProvider.value = null
+  usedFallback.value = false
 
   const wordId = wordToSearch.toLowerCase().trim()
 
@@ -69,8 +98,31 @@ const fetchWordData = async (wordToSearch) => {
   }
 
   try {
-    const data = await enrichWordWithGemini(wordToSearch)
-    wordData.value = data
+    // Se prueba primero el proveedor elegido por el usuario y, si se cae por
+    // saturación o error, se recorre la cadena de respaldo antes de rendirse.
+    const provider = aiProviderStore.provider
+    const fallbacks = aiProviderStore.fallbackProviders
+
+    try {
+      wordData.value = await enrichWordWithAI(wordToSearch, provider)
+      sourceProvider.value = provider
+      usedFallback.value = false
+    } catch (primaryError) {
+      let lastError = primaryError
+
+      for (const fallback of fallbacks) {
+        try {
+          wordData.value = await enrichWordWithAI(wordToSearch, fallback)
+          sourceProvider.value = fallback
+          usedFallback.value = true
+          break
+        } catch (error) {
+          lastError = error
+        }
+      }
+
+      if (!wordData.value) throw lastError
+    }
   } catch (error) {
     console.error('Error fetching word details:', error)
     errorMessage.value = 'No se pudo obtener la información de la palabra. Intenta de nuevo.'
@@ -162,7 +214,10 @@ watch(() => networkStore.isOnline, (online) => {
     <!-- Card de carga -->
     <div v-if="isLoading" class="text-center py-16 space-y-4">
       <div class="inline-block w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-      <p class="text-zinc-400 tracking-wide">Consultando significados de "{{ props.word }}" con IA...</p>
+      <p class="text-zinc-400 tracking-wide">
+        Consultando significados de "{{ props.word }}" con
+        {{ aiProviderStore.providerName(aiProviderStore.provider) }}...
+      </p>
     </div>
 
      <!-- Pantalla de error -->
@@ -192,6 +247,16 @@ watch(() => networkStore.isOnline, (online) => {
         <span v-else>
           Estás sin conexión: se muestra la copia guardada en este dispositivo, no la consulta de IA.
         </span>
+      </div>
+
+      <!-- Qué IA generó el resultado cuando no vino del vault local -->
+      <div v-if="!isFromCache && sourceProvider"
+        class="flex items-center gap-2 rounded-xl border px-4 py-2.5 text-xs w-fit"
+        :class="usedFallback
+          ? 'border-amber-500/20 bg-amber-500/10 text-amber-300'
+          : 'border-zinc-800 bg-zinc-900 text-zinc-400'">
+        <img :src="sourceIcon" :alt="aiProviderStore.providerName(sourceProvider)" class="h-4 w-4 shrink-0" />
+        <span>{{ sourceLabel }}</span>
       </div>
       
       <!-- Palabra Consultada -->

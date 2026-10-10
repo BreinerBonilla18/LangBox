@@ -77,7 +77,7 @@ export default defineConfig({
         skipWaiting: true,
 
         // El service worker solo sirve requests de su propio origen, y las peticiones a
-        // Supabase y Gemini salen del código con `fetch` (destination ''). No se
+        // Supabase, Gemini, Groq y OpenRouter salen del código con `fetch` (destination ''). No se
         // cachean aquí a propósito: su resultado lo decide `networkStore` y la
         // cola de pendientes de `syncService`.
         runtimeCaching: [

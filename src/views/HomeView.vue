@@ -1,7 +1,8 @@
 <script setup>
-import { Search, Book, Brain, LogOut, Download, Share } from "@lucide/vue";
+import { Search, Book, Brain, LogOut, Download, Share, ChevronDown, Check } from "@lucide/vue";
 import { useAuthStore } from "../stores/authStore";
 import { useNetworkStore } from "../stores/networkStore";
+import { useAiProviderStore } from "../stores/aiProviderStore";
 import { useInstallPrompt } from "../composables/useInstallPrompt";
 import {
   MAX_QUERY_LENGTH,
@@ -10,14 +11,43 @@ import {
 } from "../core/utils/searchValidation";
 import langboxLogo from "../assets/langbox.svg";
 import googleIcon from "../assets/google.svg";
+import geminiIcon from "../assets/gemini.svg";
+import groqIcon from "../assets/groq.svg";
+import openrouterIcon from "../assets/openrouter_dark.svg";
 import { useRouter } from "vue-router";
 import { ref, computed, watch } from "vue";
 
 const authStore = useAuthStore();
 const networkStore = useNetworkStore();
+const aiProviderStore = useAiProviderStore();
 const { isInstalled, canPrompt, needsManualInstall, promptInstall } =
   useInstallPrompt();
 const router = useRouter();
+
+// Iconos de los proveedores de IA, por clave de proveedor.
+const providerIcons = {
+  gemini: geminiIcon,
+  groq: groqIcon,
+  openrouter: openrouterIcon,
+};
+
+const providerMenuOpen = ref(false);
+
+const currentProviderIcon = computed(
+  () => providerIcons[aiProviderStore.provider],
+);
+const currentProviderName = computed(() =>
+  aiProviderStore.providerName(aiProviderStore.provider),
+);
+
+const selectProvider = (provider) => {
+  aiProviderStore.setProvider(provider);
+  providerMenuOpen.value = false;
+};
+
+const toggleProviderMenu = () => {
+  if (aiProviderStore.hasRedundancy) providerMenuOpen.value = !providerMenuOpen.value;
+};
 
 const searchQuery = ref("");
 const showIosHelp = ref(false);
@@ -260,13 +290,79 @@ const cards = [
             :maxlength="MAX_QUERY_LENGTH"
             :aria-invalid="!!searchError"
             :aria-describedby="searchError ? 'search-error' : undefined"
-            class="w-full py-3 sm:py-4 pl-10 sm:pl-12 pr-3 sm:pr-4 bg-zinc-900 border rounded-xl text-sm sm:text-base text-slate-50 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all placeholder:text-zinc-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            class="w-full py-3 sm:py-4 pl-10 sm:pl-12 pr-11 sm:pr-14 bg-zinc-900 border rounded-xl text-sm sm:text-base text-slate-50 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all placeholder:text-zinc-500 disabled:opacity-50 disabled:cursor-not-allowed"
             :class="
               searchError
                 ? 'border-rose-500/60 focus:border-rose-500 focus:ring-rose-500/20'
                 : 'border-zinc-800'
             "
           />
+
+          <!-- Selector de proveedor de IA fusionado al input. El menú abre hacia
+               abajo con su flecha apuntando hacia el input, alineado a la derecha. -->
+          <div
+            v-if="aiProviderStore.provider"
+            class="absolute right-2 sm:right-2.5 bottom-0 top-0 flex items-center"
+          >
+            <button
+              type="button"
+              :aria-haspopup="aiProviderStore.hasRedundancy ? 'menu' : undefined"
+              :aria-expanded="providerMenuOpen"
+              :title="`Proveedor de IA: ${currentProviderName}`"
+              @click="toggleProviderMenu"
+              class="flex items-center gap-0.5 p-1 rounded-lg text-zinc-400 hover:text-slate-200 hover:bg-zinc-800 transition-colors cursor-pointer"
+            >
+              <img
+                :src="currentProviderIcon"
+                :alt="currentProviderName"
+                class="w-4 h-4"
+              />
+              <ChevronDown
+                v-if="aiProviderStore.hasRedundancy"
+                class="w-3 h-3 transition-transform"
+                :class="providerMenuOpen && 'rotate-180'"
+              />
+            </button>
+
+            <div
+              v-if="providerMenuOpen"
+              role="menu"
+              class="absolute right-0 top-full z-30 mt-1.5 w-44 rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl p-1"
+            >
+              <div
+                class="pointer-events-none absolute -top-[5px] right-7 h-2.5 w-2.5 rotate-45 border-l border-t border-zinc-700 bg-zinc-900"
+              ></div>
+              <button
+                v-for="provider in aiProviderStore.availableProviders"
+                :key="provider"
+                type="button"
+                role="menuitemradio"
+                :aria-checked="aiProviderStore.provider === provider"
+                @click="selectProvider(provider)"
+                class="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs text-slate-200 hover:bg-zinc-800 transition-colors cursor-pointer"
+              >
+                <img
+                  :src="providerIcons[provider]"
+                  :alt="aiProviderStore.providerName(provider)"
+                  class="w-4 h-4"
+                />
+                <span class="flex-1 text-left">
+                  {{ aiProviderStore.providerName(provider) }}
+                </span>
+                <Check
+                  v-if="aiProviderStore.provider === provider"
+                  class="w-3.5 h-3.5 text-indigo-400"
+                />
+              </button>
+            </div>
+
+            <!-- Capa invisible que cierra el menú al hacer clic fuera -->
+            <div
+              v-if="providerMenuOpen"
+              class="fixed inset-0 z-20"
+              @click="providerMenuOpen = false"
+            ></div>
+          </div>
         </div>
         <button
           @click="handleSearch"

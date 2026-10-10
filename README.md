@@ -29,7 +29,7 @@ This is the part that shapes every other decision in the codebase.
 - **`navigator.onLine` is not trusted.** It reports `true` on captive Wi-Fi and on networks without DNS, so the network store probes the Supabase health endpoint every 30 seconds (with the public `apikey`, so the endpoint answers 200 instead of a console-logged 401) and treats *any* response, including 4xx and 5xx, as proof of connectivity. Automatic probes are coalesced and throttled to one every 15 seconds, so refocusing the tab cannot fire a burst of identical calls.
 - **The pending-ops queue survives restarts.** `pendingOps` uses a composite `[word_id+type]` key, so queueing the same change twice overwrites the previous operation instead of accumulating it — the freshest SRS state always wins.
 - **The service worker precaches the whole build**, including the web font, and falls back to `index.html` for deep routes so reloading `/vocabulary` or `/flashcards` offline does not 404. Fonts and images are cached at runtime with `CacheFirst`.
-- **Requests to Supabase and Gemini are deliberately not cached by the service worker.** They are plain `fetch` calls made from app code, and their outcome is decided by the network store and the sync queue.
+- **Requests to Supabase, Gemini and Groq are deliberately not cached by the service worker.** They are plain `fetch` calls made from app code, and their outcome is decided by the network store and the sync queue.
 - **Persistent storage is requested** via `navigator.storage.persist()`. In an offline-first app, losing IndexedDB to disk pressure would be unrecoverable.
 
 ## 🚀 Getting Started
@@ -38,7 +38,8 @@ This is the part that shapes every other decision in the codebase.
 
 - Node.js `^20.19.0 || >=22.12.0` (required by Vite 8)
 - npm
-- A Google Gemini API key
+- A Google Gemini API key (the word search uses AI)
+- Optionally, a Groq or OpenRouter API key (they act as fallback providers when Gemini is saturated)
 
 ### Installation
 
@@ -58,12 +59,16 @@ This is the part that shapes every other decision in the codebase.
    Create a `.env` file in the root directory:
    ```env
    VITE_GEMINI_API_KEY=your_gemini_api_key_here
+   VITE_GROQ_API_KEY=your_groq_api_key_here
+   VITE_OPENROUTER_API_KEY=your_openrouter_api_key_here
    VITE_SUPABASE_URL=your_supabase_project_url
    VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
    ```
 
    To get your API keys:
    - **Gemini API Key**: Visit [Google AI Studio](https://aistudio.google.com/app/apikey) and create a new API key
+   - **Groq API Key**: Visit [Groq Console](https://console.groq.com/keys) and create a new API key
+   - **OpenRouter API Key**: Visit [OpenRouter keys](https://openrouter.ai/settings/keys) and create a new API key. Free inference is reached with the `openrouter/free` model, a router that picks a free model automatically (JSON mode included).
    - **Supabase Credentials**:
      - Create a free account at [supabase.com](https://supabase.com)
      - Create a new project

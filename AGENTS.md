@@ -13,7 +13,7 @@ LangBox: offline-first Vue 3 + Vite PWA. Single package, no monorepo, no CI, no 
 
 ## Setup
 
-- `.env` (gitignored; no `.env.example`): `VITE_GEMINI_API_KEY`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
+- `.env` (gitignored; no `.env.example`): `VITE_GEMINI_API_KEY`, `VITE_GROQ_API_KEY`, `VITE_OPENROUTER_API_KEY`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
 - Node `^20.19.0 || >=22.12.0` (Vite 8 requirement)
 - No migration tooling: the `public.words` table + RLS policies are applied by hand from the SQL in README.md.
 
