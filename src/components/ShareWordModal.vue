@@ -96,7 +96,7 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
         >
           <Check v-if="copied" class="w-4 h-4 text-emerald-400" />
           <Copy v-else class="w-4 h-4" />
-          {{ copied ? '¡Copiado!' : 'Copiar enlace' }}
+          {{ copied ? '¡Copiado!' : 'Copiar' }}
         </button>
       </div>
     </template>
