@@ -41,13 +41,38 @@ const {
 const cardSpeechKey = "card";
 const exampleSpeechKey = (index) => `example-${index}`;
 const isLoading = ref(true);
+const dueWords = ref([]);
 const reviewQueue = ref([]);
 const currentIndex = ref(0);
 const showAnswer = ref(false);
 const isSessionComplete = ref(false);
+const isBatchComplete = ref(false);
+
+// Tamaño del lote de repaso. 0 significa que aún no se elige: se muestra la
+// pantalla de configuración con las opciones disponibles.
+const batchSize = ref(0);
+const currentBatch = ref(1);
 const hasNoWords = ref(false);
 const showMasteryModal = ref(false);
 const wordToDecide = ref(null);
+
+const totalBatches = computed(() =>
+  batchSize.value > 0 && dueWords.value.length > 0
+    ? Math.ceil(dueWords.value.length / batchSize.value)
+    : 0
+);
+
+// Palabras que quedan para hoy una vez terminado el lote actual.
+const remainingDue = computed(() =>
+  Math.max(0, dueWords.value.length - currentBatch.value * batchSize.value)
+);
+
+// Opciones del selector de lote: los tamaños fijos solo cuando son menores al
+// total (repasar 20 en un día de 8 no es batching) y siempre "Todas".
+const batchOptions = computed(() => {
+  const base = [10, 20, 50].filter((size) => size < dueWords.value.length);
+  return [...base, dueWords.value.length];
+});
 
 // Función para volver al vocabulario
 const handleGoBack = () => {
@@ -74,7 +99,14 @@ const advanceToNext = () => {
   currentIndex.value++;
 
   if (currentIndex.value >= reviewQueue.value.length) {
-    isSessionComplete.value = true;
+    // El lote terminó. Si aún quedan palabras pendientes hoy, el usuario pasa
+    // por el intersticial de logro antes de empezar el siguiente lote; si el
+    // lote cubría todo el día, la sesión está completa.
+    if (currentBatch.value * batchSize.value >= dueWords.value.length) {
+      isSessionComplete.value = true;
+    } else {
+      isBatchComplete.value = true;
+    }
   }
 };
 
@@ -152,6 +184,30 @@ const handleDeleteWord = async () => {
   advanceToNext();
 };
 
+// Carga el slice del lote actual desde el total de palabras de hoy. Las fallidas
+// (q < 3) se re-encolan dentro de este mismo lote, así que no se filtra por
+// aquí: el lote solo termina cuando cada tarjeta se responde bien.
+const loadNextBatch = () => {
+  const offset = (currentBatch.value - 1) * batchSize.value;
+  reviewQueue.value = dueWords.value.slice(offset, offset + batchSize.value);
+  currentIndex.value = 0;
+  showAnswer.value = false;
+  isBatchComplete.value = false;
+};
+
+// Arranca la sesión con el tamaño de lote elegido en la pantalla de inicio.
+const startSession = (size) => {
+  batchSize.value = size;
+  currentBatch.value = 1;
+  loadNextBatch();
+};
+
+// Avanza al siguiente lote desde el intersticial de logro.
+const startNextBatch = () => {
+  currentBatch.value++;
+  loadNextBatch();
+};
+
 // Función para cargar las palabras pendientes de repaso
 const loadDueWords = async () => {
   try {
@@ -163,11 +219,15 @@ const loadDueWords = async () => {
     }
 
     const words = await getWordsForReviewToday();
-    // Mezclar aleatoriamente el orden de las palabras
-    reviewQueue.value = words.sort(() => Math.random() - 0.5);
-    if (reviewQueue.value.length === 0) {
+    if (words.length === 0) {
       isSessionComplete.value = true;
+      isLoading.value = false;
+      return;
     }
+
+    // Mezclar aleatoriamente el orden de las palabras. La cola real se arma por
+    // lotes al elegir el tamaño, reutilizando este mismo arreglo barajado.
+    dueWords.value = words.sort(() => Math.random() - 0.5);
   } catch (error) {
     console.error("Error loading due words:", error);
   } finally {
@@ -200,15 +260,28 @@ onMounted(() => {
         </h1>
         <p
           class="text-zinc-400 mb-6 sm:mb-8 text-sm sm:text-base"
-          v-if="!isSessionComplete && !isLoading && !hasNoWords"
+          v-if="
+            !isSessionComplete &&
+            !isLoading &&
+            !hasNoWords &&
+            batchSize > 0 &&
+            !isBatchComplete
+          "
         >
-          Palabra {{ currentIndex + 1 }} de {{ reviewQueue.length }}
+          Lote {{ currentBatch }} de {{ totalBatches }} · Palabra
+          {{ currentIndex + 1 }} de {{ reviewQueue.length }}
         </p>
 
         <!-- Barra de Progreso -->
         <div
           class="w-full bg-zinc-800 rounded-full h-1.5 mb-6"
-          v-if="!isSessionComplete && !isLoading && !hasNoWords"
+          v-if="
+            !isSessionComplete &&
+            !isLoading &&
+            !hasNoWords &&
+            batchSize > 0 &&
+            !isBatchComplete
+          "
         >
           <div
             class="bg-indigo-500 h-1.5 rounded-full transition-all duration-300"
@@ -258,6 +331,49 @@ onMounted(() => {
         </button>
       </div>
 
+      <!-- Intersticial de logro entre lotes -->
+      <div
+        v-else-if="isBatchComplete"
+        class="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 sm:p-12 text-center space-y-6 shadow-xl relative overflow-hidden group"
+      >
+        <div
+          class="absolute -top-10 -right-10 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl group-hover:bg-emerald-500/20 transition-all duration-500"
+        ></div>
+
+        <div
+          class="w-20 h-20 bg-emerald-500/20 border border-emerald-500/30 rounded-2xl flex items-center justify-center mx-auto mb-6 transform group-hover:scale-110 transition-transform duration-500"
+        >
+          <Sparkles class="w-10 h-10 text-emerald-400" />
+        </div>
+        <h2 class="text-2xl sm:text-3xl font-bold text-slate-50">
+          ¡Lote {{ currentBatch }} completado!
+        </h2>
+        <p
+          class="text-zinc-400 text-sm sm:text-base max-w-md mx-auto leading-relaxed"
+        >
+          Repasaste {{ batchSize }} palabras de {{ dueWords.length }} que
+          tocaban hoy
+          <span v-if="remainingDue > 0">
+            y quedan {{ remainingDue }} por delante
+          </span>
+          . ¡Sigue así!
+        </p>
+        <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
+          <button
+            @click="startNextBatch"
+            class="bg-indigo-500 hover:bg-indigo-600 text-white font-medium px-6 py-3 rounded-xl transition-colors text-sm cursor-pointer flex items-center gap-2 shadow-lg shadow-indigo-500/20"
+          >
+            Continuar lote ({{ remainingDue }} restantes)
+          </button>
+          <button
+            @click="handleGoBack"
+            class="bg-zinc-800 hover:bg-zinc-700 text-slate-300 font-medium px-6 py-3 rounded-xl transition-colors text-sm cursor-pointer"
+          >
+            Volver al inicio
+          </button>
+        </div>
+      </div>
+
       <!-- Estado de sesión completa -->
       <div
         v-else-if="isSessionComplete"
@@ -284,12 +400,54 @@ onMounted(() => {
           Has completado todas las palabras para hoy. Vuelve mañana para seguir
           fortaleciendo tu vocabulario.
         </p>
+        <span
+          class="inline-block bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs px-3 py-1.5 rounded-full"
+        >
+          {{ dueWords.length }} palabras repasadas hoy
+        </span>
         <button
           @click="handleGoBack"
           class="mt-8 mx-auto bg-zinc-800 hover:bg-zinc-700 text-slate-300 font-medium px-6 py-3 rounded-xl transition-colors text-sm cursor-pointer flex items-center gap-2"
         >
           Volver a mi Vocabulario
         </button>
+      </div>
+
+      <!-- Elección del tamaño del lote -->
+      <div
+        v-else-if="!batchSize"
+        class="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 sm:p-12 text-center space-y-6 shadow-xl relative overflow-hidden group"
+      >
+        <div
+          class="absolute -top-10 -right-10 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl group-hover:bg-indigo-500/20 transition-all duration-500"
+        ></div>
+
+        <div
+          class="w-20 h-20 bg-indigo-500/20 border border-indigo-500/30 rounded-2xl flex items-center justify-center mx-auto mb-6 transform group-hover:scale-110 transition-transform duration-500"
+        >
+          <BookOpen class="w-10 h-10 text-indigo-400" />
+        </div>
+        <h2 class="text-2xl sm:text-3xl font-bold text-slate-50">
+          ¡Tienes {{ dueWords.length }} palabras para repasar!
+        </h2>
+        <p
+          class="text-zinc-400 text-sm sm:text-base max-w-md mx-auto leading-relaxed"
+        >
+          Elige cuántas palabras estudiar en esta tanda:
+        </p>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-md mx-auto">
+          <button
+            v-for="size in batchOptions"
+            :key="size"
+            @click="startSession(size)"
+            class="bg-zinc-800 hover:bg-indigo-500 hover:text-white border border-zinc-700/50 text-slate-200 font-medium px-4 py-3 rounded-xl transition-colors text-sm cursor-pointer"
+          >
+            {{ size === dueWords.length ? "Todas" : size }}
+          </button>
+        </div>
+        <p class="text-xs text-zinc-500">
+          Las no repasadas hoy siguen disponibles mañana, con tu progreso intacto.
+        </p>
       </div>
 
       <!-- Flashcard -->

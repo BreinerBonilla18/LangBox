@@ -165,6 +165,7 @@ This is the part that shapes every other decision in the codebase.
 
 - The Flashcards section lists the words whose next review date has arrived
 - Rate your recall and the SM-2 algorithm reschedules them: a failed answer resets the word to the first interval, a successful one grows it by the ease factor
+- **Study in batches**: when many words are due, pick a batch size (10 / 20 / 50 / all) and build momentum one lot at a time, with a progress summary between batches. Words you did not reach stay due, so nothing is lost
 
 ### 5. Install the App
 
